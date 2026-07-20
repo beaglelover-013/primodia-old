@@ -9008,7 +9008,6 @@ export const useGameStore = defineStore('primordia', () => {
       const message = describeHostError(error, '世界书接口没有返回具体错误。');
       throw new Error(`写入世界书失败：${message}`);
     }
-    applyOpeningState(draft, bundle);
     const message = formatOpeningAssistantMessage(bundle.story);
 
     let messageId: number | undefined;
@@ -10246,7 +10245,9 @@ export const useGameStore = defineStore('primordia', () => {
     const item = asRecord(raw);
     const qty = Math.max(0, Math.floor(readLooseNumber(item, ['数量', 'qty', 'count'], 0)));
     if (!name || qty <= 0) return null;
-    const tags = Array.isArray(item['标签']) ? item['标签'].map(tag => String(tag).trim()).filter(Boolean) : [];
+    const tags = Array.isArray(item['标签'])
+      ? item['标签'].map(tag => String(tag).trim()).filter(Boolean)
+      : String(item['标签'] ?? item['tags'] ?? '').split(/[、,，]/).map(tag => tag.trim()).filter(Boolean);
     const portionsPerUnit = Math.max(1, Math.floor(readLooseNumber(item, ['每件份数', '每件份量', 'portionsPerUnit'], 1)));
     const remainingPortions = Math.max(0, Math.min(portionsPerUnit, Math.floor(readLooseNumber(item, ['当前剩余份数', '剩余份数', 'remainingPortions'], portionsPerUnit))));
     return {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { useGameStore, type InventoryItem } from '../stores/game';
+import { useGameStore, formatCopper, type InventoryItem } from '../stores/game';
 import PmIcon from '../components/PmIcon.vue';
 
 const game = useGameStore();
@@ -36,6 +36,19 @@ function dryingProgress(status: string) {
 
 function feedLabel(item: InventoryItem) {
   return `${item.name} × ${item.qty}${item.unit || ''}`;
+}
+
+function feedPortionText(item: InventoryItem) {
+  const portions = Math.max(1, Math.floor(Number(item.portionsPerUnit) || 1));
+  const remaining = Math.max(0, Math.min(portions, Math.floor(Number(item.remainingPortions ?? portions) || 0)));
+  const portionUnit = item.portionUnit || '份';
+  if (portions <= 1) return '';
+  return `${remaining}/${portions}${portionUnit}`;
+}
+
+function feedPriceText(item: InventoryItem) {
+  const price = Math.max(0, Math.floor(Number(item.priceCopper) || 0));
+  return price > 0 ? formatCopper(price) : '';
 }
 </script>
 
@@ -163,7 +176,23 @@ function feedLabel(item: InventoryItem) {
           <div v-else class="pm-empty compact">厩舍当前没有载具记录。</div>
           <div class="feed-box">
             <strong>饲料储备 · {{ stableFeedTotal }}</strong>
-            <span v-if="game.stable.feedStock.length">{{ game.stable.feedStock.map(feedLabel).join('、') }}</span>
+            <div v-if="game.stable.feedStock.length" class="feed-list">
+              <article v-for="feed in game.stable.feedStock" :key="feed.id" class="feed-item">
+                <div class="unit-head">
+                  <strong>{{ feed.name }}</strong>
+                  <span>{{ feedLabel(feed) }}</span>
+                </div>
+                <div class="linen-meta">
+                  <span v-if="feedPortionText(feed)">当前{{ feed.unit || '份' }} {{ feedPortionText(feed) }}</span>
+                  <span v-if="feed.portionUnit">份数单位 {{ feed.portionUnit }}</span>
+                  <span v-if="feedPriceText(feed)">价格 {{ feedPriceText(feed) }}</span>
+                </div>
+                <div v-if="feed.tags.length" class="tag-row">
+                  <span v-for="tag in feed.tags" :key="tag" class="pm-tag dim">{{ tag }}</span>
+                </div>
+                <small v-if="feed.desc">{{ feed.desc }}</small>
+              </article>
+            </div>
             <span v-else>没有饲料储备记录。</span>
           </div>
         </article>
@@ -194,13 +223,34 @@ function feedLabel(item: InventoryItem) {
                 <span v-if="animal.breed" class="pm-tag dim">{{ animal.breed }}</span>
               </div>
               <p>{{ animal.product || '未记录产出' }} · {{ animal.productCycle || '周期未记录' }}</p>
-              <small>{{ animal.health || animal.feedNeed || animal.note || '状态未记录。' }}</small>
+              <div class="linen-meta">
+                <span v-if="animal.lastProductDay">上次产出日 {{ animal.lastProductDay }}</span>
+                <span v-if="animal.feedNeed">饲料需求 {{ animal.feedNeed }}</span>
+                <span v-if="animal.health">健康 {{ animal.health }}</span>
+              </div>
+              <small>{{ animal.note || '备注未记录。' }}</small>
             </div>
           </div>
           <div v-else class="pm-empty compact">圈舍当前没有禽畜记录。</div>
           <div class="feed-box">
             <strong>饲料储备 · {{ livestockFeedTotal }}</strong>
-            <span v-if="game.livestock.feedStock.length">{{ game.livestock.feedStock.map(feedLabel).join('、') }}</span>
+            <div v-if="game.livestock.feedStock.length" class="feed-list">
+              <article v-for="feed in game.livestock.feedStock" :key="feed.id" class="feed-item">
+                <div class="unit-head">
+                  <strong>{{ feed.name }}</strong>
+                  <span>{{ feedLabel(feed) }}</span>
+                </div>
+                <div class="linen-meta">
+                  <span v-if="feedPortionText(feed)">当前{{ feed.unit || '份' }} {{ feedPortionText(feed) }}</span>
+                  <span v-if="feed.portionUnit">份数单位 {{ feed.portionUnit }}</span>
+                  <span v-if="feedPriceText(feed)">价格 {{ feedPriceText(feed) }}</span>
+                </div>
+                <div v-if="feed.tags.length" class="tag-row">
+                  <span v-for="tag in feed.tags" :key="tag" class="pm-tag dim">{{ tag }}</span>
+                </div>
+                <small v-if="feed.desc">{{ feed.desc }}</small>
+              </article>
+            </div>
             <span v-else>没有饲料储备记录。</span>
           </div>
         </article>
@@ -304,6 +354,7 @@ function feedLabel(item: InventoryItem) {
 .linen-list,
 .drying-list,
 .unit-list,
+.feed-list,
 .warning-list {
   display: grid;
   gap: 8px;
@@ -314,6 +365,7 @@ function feedLabel(item: InventoryItem) {
 .linen-row,
 .drying-card,
 .unit-card,
+.feed-item,
 .feed-box,
 .warning-list span {
   display: grid;
@@ -406,6 +458,14 @@ function feedLabel(item: InventoryItem) {
 .feed-box strong,
 .unit-card strong {
   color: var(--pm-ink);
+}
+.feed-item .unit-head span {
+  color: var(--pm-ink-dim);
+  font-size: calc(11px * var(--pm-text-scale));
+}
+.feed-item small {
+  color: var(--pm-ink-dim);
+  font-size: calc(11px * var(--pm-text-scale));
 }
 @media (max-width: 900px) {
   .overview-strip,
