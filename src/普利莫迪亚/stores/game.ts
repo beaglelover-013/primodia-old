@@ -361,19 +361,8 @@ export interface DailyLogisticsSummary {
   dryReady: number;
   dryingHalfOrBetter: number;
   lowLinen: LinenStockEntry[];
-  lowSupplies: InventoryStockWarning[];
   stableNotes: string[];
   livestockNotes: string[];
-}
-
-export interface InventoryStockWarning {
-  name: string;
-  category: InventoryItem['category'];
-  available: number;
-  totalQty: number;
-  batchCount: number;
-  unit: string;
-  portionUnit: string;
 }
 
 export type InventorySource = 'satchel' | 'storage';
@@ -3341,49 +3330,10 @@ export const useGameStore = defineStore('primordia', () => {
     animals: [],
     feedStock: [],
   });
-  function inventoryWarningName(item: InventoryItem) {
-    if (item.baseName?.trim()) return item.baseName.trim();
-    let name = item.name.trim();
-    const removableTags = item.tags.filter(tag => tag && !/食材|调料|成品|酒水|杂物|日用品|菜园收成/.test(tag));
-    let changed = true;
-    while (changed && name) {
-      changed = false;
-      for (const tag of removableTags) {
-        if (!name.startsWith(tag)) continue;
-        name = name.slice(tag.length).trim();
-        changed = true;
-      }
-    }
-    return name || item.name;
-  }
   const dailyLogisticsSummary = computed<DailyLogisticsSummary>(() => {
     const dryReady = dryingBatches.value.filter(batch => batch.status === '已干可收').length;
     const dryingHalfOrBetter = dryingBatches.value.filter(batch => ['半干', '基本干了', '已干可收'].includes(batch.status)).length;
     const lowLinen = linenStock.value.filter(entry => entry.total > 0 && entry.clean <= 1);
-    const stockGroups = new Map<string, InventoryStockWarning>();
-    inventory.value
-      .filter(item => item.qty > 0)
-      .forEach(item => {
-        const warningName = inventoryWarningName(item);
-        const key = `${item.category}\u0000${warningName}`;
-        const units = inventoryUnitsFor(item);
-        const current = stockGroups.get(key) ?? {
-          name: warningName,
-          category: item.category,
-          available: 0,
-          totalQty: 0,
-          batchCount: 0,
-          unit: units.unit,
-          portionUnit: units.portionUnit,
-        };
-        current.available += availablePortionsForItem(item);
-        current.totalQty += item.qty;
-        current.batchCount += 1;
-        stockGroups.set(key, current);
-      });
-    const lowSupplies = [...stockGroups.values()]
-      .filter(item => item.available > 0 && item.available <= 3)
-      .sort((a, b) => a.available - b.available || a.name.localeCompare(b.name, 'zh-CN'));
     const stableNotes = [
       stable.value.capacity > 0 && stable.value.currentCount >= stable.value.capacity ? `厩舍容量已满：${stable.value.currentCount}/${stable.value.capacity}` : '',
       ...stable.value.vehicles
@@ -3398,7 +3348,7 @@ export const useGameStore = defineStore('primordia', () => {
         .filter(animal => /病|饿|缺|虚弱|不健康|脏/.test(`${animal.health} ${animal.feedNeed}`))
         .map(animal => `${animal.name}：${animal.health || animal.feedNeed}`),
     ].filter(Boolean);
-    return { dryReady, dryingHalfOrBetter, lowLinen, lowSupplies, stableNotes, livestockNotes };
+    return { dryReady, dryingHalfOrBetter, lowLinen, stableNotes, livestockNotes };
   });
 
   /* ---------- 常量与类型 ---------- */

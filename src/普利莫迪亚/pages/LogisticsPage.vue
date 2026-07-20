@@ -254,25 +254,6 @@ function feedPriceText(item: InventoryItem) {
             <span v-else>没有饲料储备记录。</span>
           </div>
         </article>
-
-        <article class="logistics-panel">
-          <header>
-            <div>
-              <h3><PmIcon name="pot" :size="15" /> 库存预警</h3>
-              <p>按当前库房份数、批次和单位计算。</p>
-            </div>
-            <span class="pm-tag" :class="game.dailyLogisticsSummary.lowSupplies.length ? 'warn' : 'good'">
-              {{ game.dailyLogisticsSummary.lowSupplies.length }} 项
-            </span>
-          </header>
-          <div v-if="game.dailyLogisticsSummary.lowSupplies.length" class="warning-list">
-            <span v-for="item in game.dailyLogisticsSummary.lowSupplies" :key="`${item.category}-${item.name}`">
-              {{ item.name }}只剩 {{ item.available }}{{ item.portionUnit }}
-              <template v-if="item.batchCount > 1">（{{ item.batchCount }}批，共{{ item.totalQty }}{{ item.unit }}）</template>
-            </span>
-          </div>
-          <div v-else class="pm-empty compact">当前没有低位库存预警。</div>
-        </article>
       </section>
     </div>
   </section>
@@ -354,8 +335,7 @@ function feedPriceText(item: InventoryItem) {
 .linen-list,
 .drying-list,
 .unit-list,
-.feed-list,
-.warning-list {
+.feed-list {
   display: grid;
   gap: 8px;
 }
@@ -366,8 +346,7 @@ function feedPriceText(item: InventoryItem) {
 .drying-card,
 .unit-card,
 .feed-item,
-.feed-box,
-.warning-list span {
+.feed-box {
   display: grid;
   gap: 6px;
   padding: 9px;
