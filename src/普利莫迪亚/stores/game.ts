@@ -8928,7 +8928,7 @@ export const useGameStore = defineStore('primordia', () => {
     protagonist.mood = '准备营业';
     protagonist.located = tavernPlace;
     protagonist.outfit = draft.character.appearance.trim() || protagonist.outfit;
-    protagonist.bio = bundle.characterProfile.summary || bundle.characterProfile.profile || protagonist.bio;
+    protagonist.bio = '';
     protagonist.hp = 100;
     protagonist.hpMax = 100;
     protagonist.energy = 100;
@@ -9615,6 +9615,9 @@ export const useGameStore = defineStore('primordia', () => {
 
     const nextOutfit = String(readFirstPath(data, ['主角.一句话穿着', '主角.穿着', '主角.outfit'], '') || '').trim();
     if (nextOutfit) protagonist.outfit = nextOutfit;
+
+    const protagonistBio = String(readFirstPath(data, ['主角.备注', '主角.描述', '主角.bio'], '') || '').trim();
+    protagonist.bio = protagonistBio;
 
     const nextLocated = String(readFirstPath(data, ['主角.所在位置', '主角.位置', '主角.located'], '') || '').trim();
     if (nextLocated) setCurrentPlace(nextLocated, { keepShop: isShopLikePlace(nextLocated) || shopNameMatchesPlace(nextLocated, currentPlaceText()) });

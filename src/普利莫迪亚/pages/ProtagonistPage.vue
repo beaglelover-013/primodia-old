@@ -60,7 +60,7 @@ function trainCooking() {
               {{ state.名称 }} · {{ state.剩余回合 }}回合
             </span>
           </div>
-          <p>{{ p.bio }}</p>
+          <p v-if="p.bio">{{ p.bio }}</p>
         </div>
       </section>
 
