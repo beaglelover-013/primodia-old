@@ -1499,7 +1499,7 @@ function tavernRegionIconFromName(name: string) {
 
 function createTavernRegionFromMvuRecord(regionName: string, record: Record<string, any>, fallbackIndex: number): TavernRegion {
   const name = regionName.trim() || `新空间${fallbackIndex + 1}`;
-  return {
+  const region: TavernRegion = {
     id: slugId(name, `region-${fallbackIndex + 1}`),
     name,
     subtitle: String(readFirstPath(record, ['副标题', '类型', '功能', 'subtitle'], '故事中形成的空间') || '故事中形成的空间'),
@@ -1511,6 +1511,8 @@ function createTavernRegionFromMvuRecord(regionName: string, record: Record<stri
     staff: String(readFirstPath(record, ['分配员工', 'staff'], '') ?? '').trim() || undefined,
     facilities: [],
   };
+  if (region.id === 'rooms' || region.name === '客房') normalizeRoomRegionPresentation(region);
+  return region;
 }
 
 function ensureTavernRegionFromMvuName(regionList: TavernRegion[], regionName: string, record: Record<string, any>) {
@@ -1519,6 +1521,32 @@ function ensureTavernRegionFromMvuName(regionList: TavernRegion[], regionName: s
   const region = createTavernRegionFromMvuRecord(regionName, record, regionList.length);
   regionList.push(region);
   return region;
+}
+
+function defaultRoomRegionDescription(roomCount = 3) {
+  return `楼上客房区保留了${roomCount}间普通小客房，旧木床、干净草褥、粗布被褥和简单门闩都已收拾妥当。房间朴素安静，足够让村口来往旅人遮风过夜。`;
+}
+
+function isLegacyRoomRegionText(value: string) {
+  return /丘陵村口|六张木桌|旧木柜台|灶台余温|谷物焦甜|重新布置|本次开局|酒馆档案要点|按「/.test(value);
+}
+
+function normalizeRoomRegionPresentation(region: TavernRegion, roomCount = region.rooms?.length || 3) {
+  if (region.id !== 'rooms' && region.name !== '客房') return false;
+  let changed = false;
+  if (!region.subtitle.trim() || isLegacyRoomRegionText(region.subtitle)) {
+    region.subtitle = '住宿、房间、休憩';
+    changed = true;
+  }
+  if (!region.style.trim() || isLegacyRoomRegionText(region.style)) {
+    region.style = '朴素客房';
+    changed = true;
+  }
+  if (!region.description.trim() || isLegacyRoomRegionText(region.description)) {
+    region.description = defaultRoomRegionDescription(roomCount);
+    changed = true;
+  }
+  return changed;
 }
 
 function normalizeInventoryCategory(value: unknown): InventoryItem['category'] {
@@ -8789,21 +8817,25 @@ export const useGameStore = defineStore('primordia', () => {
       if (regionRoot[region.name] !== record) regionRoot[region.name] = record;
 
       const currentStyle = String(readFirstPath(record, ['风格', 'style'], '') || '').trim();
-      if (isDefaultOpeningRegionStyle(currentStyle, draftStyle)) {
+      if (region.name === '客房' && (!currentStyle || isLegacyRoomRegionText(currentStyle))) {
+        record['风格'] = '朴素客房';
+      } else if (isDefaultOpeningRegionStyle(currentStyle, draftStyle)) {
         record['风格'] =
           region.name === '客房'
-            ? `${draftStyle || '丘陵村口小型旧酒馆'}的朴素客房`
+            ? '朴素客房'
             : `${styleSeed} · ${region.name}`;
       }
 
       const currentDescription = String(readFirstPath(record, ['描述', 'description'], '') || '').trim();
-      if (!currentDescription || currentDescription === region.description) {
+      if (region.name === '客房' && (!currentDescription || currentDescription === region.description || isLegacyRoomRegionText(currentDescription))) {
+        const roomCount = Object.keys(asRecord(tavern['客房'])).length || 3;
+        record['描述'] = defaultRoomRegionDescription(roomCount);
+      } else if (!currentDescription || currentDescription === region.description) {
         const placePrefix = placeText ? `${placeText}中，` : '';
         const archiveHint = tavernArchive ? `酒馆档案要点：${tavernArchive}` : `开局故事要点：${compactOpeningField(draft.tavern.story, 120) || '以本次开局设定为准。'}`;
         if (region.name === '客房') {
           const roomCount = Object.keys(asRecord(tavern['客房'])).length || 3;
-          record['描述'] =
-            `${placePrefix}客房区保留了${roomCount}间普通房，使用旧木床、干净草褥和简单门闩，陈设朴素，供往来旅客安稳过夜。${archiveHint}`;
+          record['描述'] = defaultRoomRegionDescription(roomCount);
         } else {
           record['描述'] = `${placePrefix}${region.name}按「${styleSeed}」重新布置，细节服务于本次开局而不是默认模板。${archiveHint}`;
         }
@@ -8912,6 +8944,7 @@ export const useGameStore = defineStore('primordia', () => {
       ...region,
       condition: region.name === tavernPlace || region.id === 'main-hall' ? regionCondition : region.condition,
     }));
+    regions.value.forEach(region => normalizeRoomRegionPresentation(region));
     heroines.value = [];
     tavernNpcActivities.value = [];
     inventory.value = openingInventory(draft.tavern.stock);
@@ -9730,6 +9763,9 @@ export const useGameStore = defineStore('primordia', () => {
         };
         if (room) Object.assign(room, nextRoom);
         else roomRegion.rooms.push(nextRoom);
+        changed = true;
+      }
+      if (normalizeRoomRegionPresentation(roomRegion, roomRegion.rooms.length || Object.keys(roomRoot).length || 3)) {
         changed = true;
       }
     }
