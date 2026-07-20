@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { parse as parseYaml } from 'yaml';
 import { useGameStore } from '../stores/game';
 import PmIcon from '../components/PmIcon.vue';
 
@@ -35,6 +36,14 @@ function resetEditor() {
 }
 
 watch(snapshot, resetEditor, { immediate: true, deep: true });
+
+function parseVariableEditorText(text: string) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return parseYaml(text);
+  }
+}
 
 function valueKind(value: unknown) {
   if (Array.isArray(value)) return `数组 · ${value.length}项`;
@@ -132,17 +141,17 @@ async function saveVariables() {
   editError.value = '';
   editNotice.value = '';
   try {
-    const parsed = JSON.parse(variableText.value);
+    const parsed = parseVariableEditorText(variableText.value);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error('变量必须是一整个 JSON 对象。');
+      throw new Error('变量必须是一整个 JSON/YAML 对象。');
     }
     const ok = await game.setFrontendMvuData(parsed as Record<string, unknown>);
     if (!ok) {
       throw new Error('前端状态已更新，但当前楼层变量写入失败。请确认酒馆助手变量接口可用后再保存一次。');
     }
-    editNotice.value = '变量已保存到当前楼层。';
+    editNotice.value = '变量已保存到当前楼层，并已同步前端状态。';
   } catch (error) {
-    editError.value = error instanceof Error ? error.message : '变量 JSON 解析失败。';
+    editError.value = error instanceof Error ? error.message : '变量 JSON/YAML 解析失败。';
   } finally {
     saving.value = false;
   }
@@ -201,7 +210,7 @@ async function copyVariables() {
           <div class="editor-head">
             <div>
               <h3>编辑完整变量</h3>
-              <p>可以直接修改下面这段文字。保存前会检查 JSON 格式；保存后会同步前端状态和当前楼层变量。</p>
+              <p>可以直接修改下面这段文字。支持 JSON 或 YAML；保存后会同步前端状态和当前楼层变量。</p>
             </div>
             <div class="editor-actions">
               <button class="pm-btn sm ghost" :disabled="saving" @click="resetEditor">
