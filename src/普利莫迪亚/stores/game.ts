@@ -7827,19 +7827,10 @@ export const useGameStore = defineStore('primordia', () => {
         ...(Object.prototype.hasOwnProperty.call(frontendSnapshot.酒馆, '声望名')
           ? { 声望名: clonePlain(frontendSnapshot.酒馆.声望名) }
           : {}),
-        ...(Object.prototype.hasOwnProperty.call(frontendSnapshot.酒馆, '区域')
-          ? { 区域: clonePlain(frontendSnapshot.酒馆.区域) }
-          : {}),
-        ...(Object.prototype.hasOwnProperty.call(frontendSnapshot.酒馆, '客房')
-          ? { 客房: clonePlain(frontendSnapshot.酒馆.客房) }
-          : {}),
       };
     }
     if (frontendSnapshot.库房 && typeof frontendSnapshot.库房 === 'object') next.库房 = clonePlain(frontendSnapshot.库房);
     if (frontendSnapshot.行囊 && typeof frontendSnapshot.行囊 === 'object') next.行囊 = clonePlain(frontendSnapshot.行囊);
-    if (frontendSnapshot.农田与酒窖 && typeof frontendSnapshot.农田与酒窖 === 'object') {
-      next.农田与酒窖 = clonePlain(frontendSnapshot.农田与酒窖);
-    }
     if (frontendSnapshot.街坊商铺 && typeof frontendSnapshot.街坊商铺 === 'object') {
       next.街坊商铺 = clonePlain(frontendSnapshot.街坊商铺);
     }
@@ -10430,7 +10421,7 @@ export const useGameStore = defineStore('primordia', () => {
       .join('.');
     if (!normalizedPath) return false;
 
-    const nextData = buildFrontendMvuSnapshot('变量总览手动编辑');
+    const nextData = getAuthoritativeMvuData(undefined, '变量总览手动编辑');
     setPlainPath(nextData, normalizedPath, value);
     applyMvuStatData(nextData, { restoreInventory: true });
     const wroteMessage = await writeCurrentMessageStatData(nextData);
