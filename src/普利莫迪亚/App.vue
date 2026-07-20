@@ -21,6 +21,7 @@ import MapPage from './pages/MapPage.vue';
 import ShopPage from './pages/ShopPage.vue';
 import LedgerPage from './pages/LedgerPage.vue';
 import FarmBrewPage from './pages/FarmBrewPage.vue';
+import LogisticsPage from './pages/LogisticsPage.vue';
 import VariablesPage from './pages/VariablesPage.vue';
 import SettingsPage from './pages/SettingsPage.vue';
 import { activateSameFloorMode } from './utils/sameFloor';
@@ -273,6 +274,8 @@ const tabComponent = computed(() => {
       return LedgerPage;
     case 'farm':
       return FarmBrewPage;
+    case 'logistics':
+      return LogisticsPage;
     case 'variables':
       return VariablesPage;
     case 'settings':
@@ -299,6 +302,7 @@ const tabTitle = computed(
       shop: '街坊商铺',
       ledger: '账单',
       farm: '农田与酒窖',
+      logistics: '后勤与圈舍',
       variables: '变量总览',
       settings: '系统与设置',
     })[game.currentTab],

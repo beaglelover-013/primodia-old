@@ -65,6 +65,7 @@ const navGroups: NavGroup[] = [
       { id: 'inventory', name: '行囊与库房', icon: 'pot', sub: '使用 · 入库 · 炉台', status: 'ready' },
       { id: 'recipes', name: '配方簿', icon: 'ledger', sub: '复刻 · 记录', status: 'ready' },
       { id: 'farm', name: '农田与酒窖', icon: 'farm', sub: '种植 · 陈酿', status: 'ready' },
+      { id: 'logistics', name: '后勤与圈舍', icon: 'ledger', sub: '布草 · 厩舍 · 禽畜', status: 'ready' },
     ],
   },
   {

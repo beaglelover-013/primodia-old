@@ -686,6 +686,7 @@ export type TabId =
   | 'shop'
   | 'ledger'
   | 'farm'
+  | 'logistics'
   | 'variables'
   | 'settings';
 
