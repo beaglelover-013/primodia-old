@@ -119,7 +119,7 @@ const canConfirm = computed(() =>
       !cannotGenerateReason.value &&
       characterProfileState.value === '已写入' &&
       tavernProfileState.value === '已写入' &&
-      story.value?.initvar,
+      story.value?.maintext,
   ),
 );
 const progressPercent = computed(() => `${((currentStep.value + 1) / steps.length) * 100}%`);
@@ -461,19 +461,19 @@ async function generateOpeningStoryStep() {
     profile: String(tavernEntry.content || tavernProfile.value.profile),
   };
 
-  const storyResult = await runTask('正在生成开场白与初始变量', () =>
+  const storyResult = await runTask('正在生成开场白', () =>
     game.generateOpeningStoryWithInitvar(draft, savedCharacterProfile, savedTavernProfile),
   );
   if (!storyResult) return;
   if (draftKey(buildDraft()) !== currentKey) {
-    error.value = '开局登记已变化，请重新生成开场白与变量。';
+    error.value = '开局登记已变化，请重新生成开场白。';
     return;
   }
   story.value = storyResult;
   generatedDraftKey.value = currentKey;
   characterProfileState.value = '已写入';
   tavernProfileState.value = '已写入';
-  notice.value = '开场白和初始变量已生成，可以开始游戏。';
+  notice.value = '开场白已生成，可以开始游戏。';
 }
 
 async function generateProfilesAndStoryFromCurrentTemplates() {
@@ -486,7 +486,7 @@ async function generateProfilesAndStoryFromCurrentTemplates() {
   await generateTavernProfileStep();
   if (tavernProfileState.value !== '已写入' || !tavernProfile.value) return;
   await generateOpeningStoryStep();
-  if (story.value?.initvar) {
+  if (story.value?.maintext) {
     currentStep.value = 3;
     showOpeningAdvanced.value = false;
   }
@@ -519,7 +519,7 @@ async function saveEditedOpeningTemplates() {
 
 async function confirmOpening() {
   if (!canConfirm.value) {
-    error.value = cannotGenerateReason.value || '请先按顺序完成人物档案、酒馆档案、开场白与初始变量。';
+    error.value = cannotGenerateReason.value || '请先按顺序完成人物档案、酒馆档案与开场白。';
     return;
   }
   const draft = buildDraft();
@@ -529,8 +529,8 @@ async function confirmOpening() {
     error.value = '开局登记已变化，请重新按顺序生成档案与开场白。';
     return;
   }
-  if (!characterProfile.value || !tavernProfile.value || !story.value || !story.value.initvar) {
-    error.value = '请先按顺序完成人物档案、酒馆档案、开场白与初始变量。';
+  if (!characterProfile.value || !tavernProfile.value || !story.value?.maintext) {
+    error.value = '请先按顺序完成人物档案、酒馆档案与开场白。';
     return;
   }
   const result = await runTask('正在写入世界书并创建开局楼层', () =>
@@ -767,7 +767,7 @@ watch(
             <div class="quick-copy">
               <p>默认开局</p>
               <h2>固定开场白快速开局</h2>
-              <span>直接创建第 1 层，写入初始变量，并完成世界书绑定。适合第一次游玩或想快速进入故事的人。</span>
+              <span>直接创建第 1 层正文，并完成世界书绑定。适合第一次游玩或想快速进入故事的人。</span>
             </div>
             <div class="quick-controls">
               <label>
@@ -995,7 +995,7 @@ watch(
               </button>
             </div>
             <details class="advanced-opening" :open="showOpeningAdvanced">
-              <summary>高级开局细节：模板、档案与 initvar</summary>
+              <summary>高级开局细节：模板、档案与正文</summary>
               <div class="template-actions opening-sequence-actions">
               <button class="opening-btn primary" type="button" :disabled="!!loading || !!cannotGenerateReason" @click="generateCharacterProfileStep">
                 1. 生成人物档案并写入
@@ -1004,7 +1004,7 @@ watch(
                 2. 生成酒馆档案并写入
               </button>
               <button class="opening-btn primary" type="button" :disabled="!!loading || characterProfileState !== '已写入' || tavernProfileState !== '已写入'" @click="generateOpeningStoryStep">
-                3. 生成开场白与变量
+                3. 生成开场白
               </button>
             </div>
             <div v-if="cannotGenerateReason" class="hint-box warn">{{ cannotGenerateReason }}</div>
@@ -1050,7 +1050,7 @@ watch(
                   <div v-else class="empty-box">尚未生成。点击上方按钮后，AI 会先写入这份模板。</div>
                 </label>
               </div>
-              <div class="fixed-option">正式开局会先把人物档案、酒馆档案分别写入世界书，再生成开场白和 initvar。</div>
+              <div class="fixed-option">正式开局会先把人物档案、酒馆档案分别写入世界书，再生成开场白正文。</div>
             </div>
             <div class="field-row two">
               <label><span>人物档案 · {{ characterProfileState }}</span><textarea v-if="characterProfile" v-model="characterProfile.profile" class="opening-textarea tall"></textarea><div v-else class="empty-box">尚未生成。</div></label>
@@ -1058,9 +1058,9 @@ watch(
             </div>
             <label><span>开局正文</span><textarea v-if="story" v-model="story.maintext" class="opening-textarea story-box"></textarea><div v-else class="empty-box">尚未生成开场白。</div></label>
             <label>
-              <span>初始变量校验</span>
-              <div v-if="story?.initvar" class="empty-box">已生成完整 initvar，将写入第 1 层 stat_data。</div>
-              <div v-else class="empty-box">尚未生成 initvar，不能开始游戏。</div>
+              <span>开场正文状态</span>
+              <div v-if="story?.maintext" class="empty-box">已生成开场正文；本次不会写入 initvar 或 stat_data。</div>
+              <div v-else class="empty-box">尚未生成开场正文。</div>
             </label>
             <div class="fixed-option">固定选项：1.开始我们的故事</div>
             </details>

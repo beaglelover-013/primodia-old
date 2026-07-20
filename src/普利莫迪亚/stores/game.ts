@@ -9005,8 +9005,6 @@ export const useGameStore = defineStore('primordia', () => {
     }
     applyOpeningState(draft, bundle);
     const message = formatOpeningAssistantMessage(bundle.story);
-    const statData = buildOpeningStatData(draft, bundle);
-    applyMvuStatData(statData, { restoreInventory: true });
 
     let messageId: number | undefined;
     try {
@@ -9016,7 +9014,6 @@ export const useGameStore = defineStore('primordia', () => {
           {
             role: 'assistant',
             message,
-            data: { stat_data: statData },
             extra: {
               primordia: {
                 type: 'opening_story',
@@ -9029,9 +9026,6 @@ export const useGameStore = defineStore('primordia', () => {
         { refresh: 'none' },
       );
       messageId = typeof getLastMessageId === 'function' ? getLastMessageId() : undefined;
-      if (typeof messageId === 'number') {
-        await writePrimordiaStatData(statData, normalizeMessageVariableOption(messageId));
-      }
     } catch (error) {
       const detail = describeHostError(error, '楼层接口没有返回具体错误。');
       throw new Error(`创建第 1 层开局消息失败：${detail}`);

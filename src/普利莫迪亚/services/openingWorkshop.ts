@@ -948,7 +948,7 @@ ${tavernProfile.profile}`;
 async function runOpeningInitvarGeneration(prompt: string) {
   const result = await runIsolatedOpeningGeneration(
     prompt,
-    '你是普利莫迪亚专用开局生成器。当前任务是初始化第 1 层，不是普通回合更新。必须同时生成开场正文和完整初始变量。严格输出用户要求的 XML 标签，不输出解释、Markdown 代码块或额外前后缀。开局变量只能使用 <UpdateVariable><initvar> YAML，不得使用 JSONPatch，不得输出 <Analysis>。',
+    '你是普利莫迪亚专用开局生成器。当前任务只生成第 1 层开场正文，不初始化变量，不输出 <UpdateVariable>、<initvar>、JSONPatch 或 <Analysis>。严格输出用户要求的 XML 标签，不输出解释、Markdown 代码块或额外前后缀。',
   );
   const text = coerceGenerationText(result);
   if (!text) throw new Error('AI 没有返回可读取的文本。');
@@ -962,13 +962,10 @@ function parseOpeningStoryWithInitvar(text: string): OpeningStoryDraft {
   const maintext = taggedMaintext || plainMaintext;
   if (!maintext) throw new Error('AI 没有输出 <maintext> 开场正文，也没有可提取的开场正文文本。');
   const sum = extractAnyTaggedBlock(source, ['sum', 'summary', '摘要']);
-  const { initvar, initvarYaml } = parseOpeningInitvar(source);
   return {
     maintext: stripOpeningForbiddenBlocks(maintext),
     options: ['开始我们的故事'],
     sum,
-    initvar,
-    initvarYaml,
     raw: source,
   };
 }
@@ -1112,11 +1109,10 @@ export async function generateOpeningStoryWithInitvar(
   characterProfile?: OpeningGeneratedProfile,
   tavernProfile?: OpeningGeneratedProfile,
 ): Promise<OpeningStoryDraft> {
-  const prompt = `请根据本次普利莫迪亚开局登记信息，生成第 1 层开场白和完整初始变量。
+  const prompt = `请根据本次普利莫迪亚开局登记信息，生成第 1 层开场白。
 
-你要做两件事：
-1. 写一段适合普利莫迪亚的开场正文，交代人物、酒馆、城市、第一天的起点。结尾不要替玩家做决定。
-2. 根据同一个开场事实，写完整 <initvar> 初始变量。变量必须和正文一致。
+你只需要写一段适合普利莫迪亚的开场正文，交代人物、酒馆、城市、第一天的起点。结尾不要替玩家做决定。
+不要输出任何变量，不要输出 <UpdateVariable>、<initvar>、JSONPatch 或 <Analysis>。
 
 只允许输出以下结构，不要输出解释，不要输出 Markdown 代码块：
 <maintext>
@@ -1125,70 +1121,14 @@ export async function generateOpeningStoryWithInitvar(
 <option>
 1.开始我们的故事
 </option>
-<UpdateVariable>
-<initvar>
-世界:
-  ...
-酒馆:
-  ...
-主角:
-  ...
-库房:
-  ...
-  日用品: {}
-行囊:
-  食材: {}
-  调料: {}
-  成品: {}
-  酒水: {}
-  杂物: {}
-临时状态:
-  主角: []
-  酒馆: []
-  酒馆区域: {}
-  人物: {}
-人物羁绊: {}
-农田与酒窖:
-  农田: {}
-  酒窖桶: {}
-布草库存: {}
-晾晒:
-  晾晒中: {}
-厩舍:
-  状态: 停用
-  风格: ""
-  描述: ""
-  容量: 0
-  当前载具数: 0
-  载具: {}
-  饲料储备: {}
-禽畜圈养:
-  圈舍状态: 停用
-  圈舍风格: ""
-  圈舍描述: ""
-  禽畜: {}
-  饲料储备: {}
-街坊商铺:
-  当前商铺: ""
-</initvar>
-</UpdateVariable>
 
 禁止事项：
+- 不要输出 initvar。
+- 不要输出 <UpdateVariable>。
 - 不要输出 JSONPatch。
 - 不要输出 <Analysis>。
-- 不要把变量写成 JSON。
-- 不要输出坐标、地图、系统判定。
-- 不要照抄示例省略号，所有叶节点必须有具体值。
-- 顶层必须是正常中文：世界、酒馆、主角、库房、行囊、临时状态、人物羁绊、农田与酒窖、布草库存、晾晒、厩舍、禽畜圈养、街坊商铺。
-- 酒馆.整体概况必须根据“酒馆风格”和“AI 已整理酒馆档案”重写，用2-4句总结当前酒馆总体状态、已可用空间和仍待整理角落。
-- 酒馆.区域 只写当前确定存在/可用的空间；未整理、未命名、未来可开发的角落写进整体概况，不要预设成区域。
-- 酒馆.客房 默认生成三间普通客房，房名可以朴素编号；描述必须符合本次酒馆档案，不要使用豪华房、主题房或脱离开局地点的景观模板。
-- 每个酒馆区域必须根据“酒馆风格”和“AI 已整理酒馆档案”重写；不得沿用默认模板词，如“木石混合”“橡木与石墙”“深色橡木”“石灶与铁锅”“木梁与粗布”“石壁与木桶”，除非玩家填写的酒馆风格本来就是这些。
-- 每个酒馆区域的 描述 必须体现玩家指定的酒馆风格、领地城市和开局故事，不要只写泛用功能说明。
 - 主角种族必须严格使用“人物登记 / 种族”的值，不得根据酒馆领地、城市或当地主要种族改写。
 - 酒馆领地和城市只影响环境、常见居民、食材与风俗；如果主角种族与当地主要种族不同，就写成外来者、客居者或继承者，不要把主角改成当地种族。
-
-${OPENING_INITVAR_SCHEMA_GUIDE}
 
 本次玩家开局信息：
 时代: ${draft.era}
@@ -1223,13 +1163,17 @@ AI 已整理酒馆档案:
 ${tavernProfile?.profile ? stripOpeningForbiddenBlocks(tavernProfile.profile) : '（尚未提供，请仅参考玩家原始酒馆信息。）'}`;
 
   const story = parseOpeningStoryWithInitvar(await runOpeningInitvarGeneration(prompt));
-  enforceOpeningDraftFacts(story, draft);
-  assertOpeningStoryMatchesDraft(story, draft);
   return story;
 }
 
 export function formatOpeningAssistantMessage(story: OpeningStoryDraft) {
   return `<maintext>\n${story.maintext.trim()}\n</maintext>\n\n<option>\n1.开始我们的故事\n</option>`;
+}
+
+function omitOpeningInitvar<T extends { bundle: OpeningGenerationBundle }>(preset: T): T {
+  delete preset.bundle.story.initvar;
+  delete preset.bundle.story.initvarYaml;
+  return preset;
 }
 
 function indentBlock(text: string, spaces = 4) {
@@ -1576,7 +1520,7 @@ export async function writeOpeningWorldbook(
   };
 }
 
-export function buildFixedOpeningPreset(worldbookName = ''): {
+export function buildFixedOpeningPreset(worldbookName = '', keepInitvarForBranch = false): {
   draft: OpeningWorkshopDraft;
   bundle: OpeningGenerationBundle;
 } {
@@ -1946,7 +1890,7 @@ export function buildFixedOpeningPreset(worldbookName = ''): {
   });
   initvar.主角.当前状态 = '发呆中，被进门的应聘者打断';
 
-  return {
+  const preset = {
     draft,
     bundle: {
       characterProfile: {
@@ -1969,6 +1913,7 @@ export function buildFixedOpeningPreset(worldbookName = ''): {
       },
     },
   };
+  return keepInitvarForBranch ? preset : omitOpeningInitvar(preset);
 }
 
 const SHEEP_OPENING_MAINTEXT = `解冻月的阳光没有一丝遮拦。天蓝得干净，像刷过的。阳光从东南方倾斜地倒下来，照在脸上白晃晃的--不全是阳光的功劳，是地上的融雪在帮它。布拉姆维克的积雪正在大面积崩溃，村口没铺石板的泥路变成了一条缓缓流动的浅泥河，车辙凹处积出深到脚踝的水洼，水面倒映着干干净净的天。屋檐在滴水，白桦枝在滴水，石墙根底下半融的冰碴子也在滴水，整个村子像被一场只有声音没有雨滴的雨淋着。远处磨坊的水轮比前几天转得快了--溪水涨了--吱呀声在干净的空气里传出很远。
@@ -2007,7 +1952,7 @@ export function buildSheepOpeningPreset(worldbookName = ''): {
   draft: OpeningWorkshopDraft;
   bundle: OpeningGenerationBundle;
 } {
-  const preset = buildFixedOpeningPreset(worldbookName);
+  const preset = buildFixedOpeningPreset(worldbookName, true);
   const { draft, bundle } = preset;
   draft.tavern.story = '酿造师公会学徒绵暖背着木箱来到布拉姆维克村口的铁壶酒馆，还没来得及介绍自己，就被融雪午后的风吹乱了开场。';
   draft.tavern.funds = '6金币';
@@ -2060,7 +2005,7 @@ export function buildSheepOpeningPreset(worldbookName = ''): {
     备注:
       '绵暖是刚到韦斯托利亚不到一周的酿造师公会学徒，浅琥珀色横瞳，黑色面孔，粉色鼻尖，白色卷毛和向后弯卷的象牙白羊角很醒目。她受养母安排从小村庄开始拜访酒馆，嗅觉敏锐，闻到谷物、铁锅、油脂和焦炭味时会本能思考酿造或调味改良。她极度紧张，开场时被融雪午后的风吹乱，尚未成功说出自我介绍。偏好：温和交流、酿造、谷物香气、被认真听完；注意：木牌写着“请不要让我喝酒”。',
   };
-  return preset;
+  return omitOpeningInitvar(preset);
 }
 
 const SOLO_COOK_OPENING_MAINTEXT = `克斯从睡梦中醒来，迎接他新的一天。`;
@@ -2069,7 +2014,7 @@ export function buildSoloCookOpeningPreset(worldbookName = ''): {
   draft: OpeningWorkshopDraft;
   bundle: OpeningGenerationBundle;
 } {
-  const preset = buildFixedOpeningPreset(worldbookName);
+  const preset = buildFixedOpeningPreset(worldbookName, true);
   const { draft, bundle } = preset;
   draft.tavern.story = '克斯在解冻月清晨独自醒来，没有任何女主或陌生来客登场。他只想把铁壶酒馆收拾起来，靠做饭赚钱。';
   draft.tavern.funds = '6金币';
@@ -2111,7 +2056,7 @@ export function buildSoloCookOpeningPreset(worldbookName = ''): {
   initvar.农田与酒窖 = initvar.农田与酒窖 ?? { 农田: {}, 酒窖桶: {} };
   initvar.街坊商铺 = { 当前商铺: '' };
 
-  return preset;
+  return omitOpeningInitvar(preset);
 }
 
 export function buildOpeningFallbackStory(draft: OpeningWorkshopDraft) {
