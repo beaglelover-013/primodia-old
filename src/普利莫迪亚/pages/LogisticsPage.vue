@@ -62,7 +62,7 @@ function feedPriceText(item: InventoryItem) {
         </h2>
         <div class="sub">布草 · 晾晒 · 厩舍 · 禽畜 · 饲料</div>
       </div>
-      <button class="pm-btn sm ghost" @click="game.loadFromMvu({ force: true })">
+      <button class="pm-btn sm ghost" @click="game.reloadCurrentFloorMvu()">
         <PmIcon name="refresh" :size="12" /> 重读变量
       </button>
     </header>

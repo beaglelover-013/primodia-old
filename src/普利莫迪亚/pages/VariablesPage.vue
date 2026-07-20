@@ -109,9 +109,9 @@ async function reloadCurrentMvu() {
   editError.value = '';
   editNotice.value = '';
   try {
-    const ok = game.loadFromMvu({ force: true });
+    const ok = game.reloadCurrentFloorMvu({ silent: true });
     resetEditor();
-    editNotice.value = ok ? '已根据当前楼层变量刷新前端数字。' : '当前楼层没有读到可用变量。';
+    editNotice.value = ok ? '已重新读取本层变量，并刷新前端显示。' : '当前楼层没有读到可用变量。';
   } catch (error) {
     editError.value = error instanceof Error ? error.message : '重新读取当前楼层变量失败。';
   } finally {

@@ -10477,6 +10477,56 @@ export const useGameStore = defineStore('primordia', () => {
     return true;
   }
 
+  function applyReadonlyMessageMvu(options: { messageId?: number; restoreInventory?: boolean } = {}) {
+    const rawStatData = readMessageStatData(options.messageId);
+    if (!rawStatData) return false;
+    const statData = clonePlainData(rawStatData);
+    applyMvuStatData(statData, { restoreInventory: options.restoreInventory ?? true });
+    syncGeneratedShopWithLocation(options.messageId);
+    logMvuSyncMismatches(statData);
+    return true;
+  }
+
+  function currentReadableMvuMessageIds(preferredMessageId?: number) {
+    const ids: number[] = [];
+    const pushId = (value: unknown) => {
+      if (typeof value !== 'number' || !Number.isFinite(value)) return;
+      if (!ids.includes(value)) ids.push(value);
+    };
+    pushId(preferredMessageId);
+    pushId(loadedStoryCheckpoint.value?.messageId);
+    pushId(typeof getCurrentMessageId === 'function' ? getCurrentMessageId() : undefined);
+    pushId(typeof getChatMessages === 'function' ? getChatMessages(-1, { role: 'assistant' })?.at(-1)?.message_id : undefined);
+    pushId(typeof getLastMessageId === 'function' ? getLastMessageId() : undefined);
+    pushId(-1);
+    return ids;
+  }
+
+  function reloadCurrentFloorMvu(options: { messageId?: number; silent?: boolean } = {}) {
+    for (const messageId of currentReadableMvuMessageIds(options.messageId)) {
+      if (!applyReadonlyMessageMvu({ messageId, restoreInventory: true })) continue;
+      if (!options.silent) {
+        const label = messageId === -1 ? '当前/最新楼层' : `楼层 #${messageId}`;
+        pushLog('系统', `已重新读取${label}变量并刷新前端显示；没有写回变量。`, {
+          source: 'engine',
+          authoritative: true,
+          tone: 'cyan',
+          actionType: 'MVU_RELOAD',
+        });
+      }
+      return true;
+    }
+    if (!options.silent) {
+      pushLog('系统', '当前楼层没有读到可用变量，前端显示未改变。', {
+        source: 'engine',
+        authoritative: true,
+        tone: 'amber',
+        actionType: 'MVU_RELOAD',
+      });
+    }
+    return false;
+  }
+
   function needsReputationMvuShapeMigration(data: PrimordiaStatData) {
     const tavern = asRecord(readFirstPath(data, ['酒馆'], undefined));
     if (!Object.keys(tavern).length) return false;
@@ -11578,6 +11628,7 @@ export const useGameStore = defineStore('primordia', () => {
     setFrontendMvuData,
     cleanupLegacyCharacterAlias,
     syncFrontendFromMessageMvu,
+    reloadCurrentFloorMvu,
     rerollTodayWeather,
     lifePhase,
     energyPhase,

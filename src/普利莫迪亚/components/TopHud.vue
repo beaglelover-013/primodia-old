@@ -30,6 +30,9 @@ const activeTemporaryStates = computed(() => game.flattenTemporaryStates().slice
 const isCalendarOpen = ref(false);
 const calendarAnchor = ref<HTMLElement | null>(null);
 const isFocusMode = ref(false);
+const mvuReloading = ref(false);
+const mvuReloadNotice = ref('');
+let mvuReloadNoticeTimer = 0;
 
 function closeCalendar() {
   isCalendarOpen.value = false;
@@ -76,6 +79,25 @@ async function toggleFocusMode() {
   syncFocusMode();
 }
 
+async function reloadCurrentFloorVariables() {
+  if (mvuReloading.value) return;
+  mvuReloading.value = true;
+  mvuReloadNotice.value = '读取中';
+  window.clearTimeout(mvuReloadNoticeTimer);
+  try {
+    const ok = game.reloadCurrentFloorMvu();
+    mvuReloadNotice.value = ok ? '已重读' : '未读到';
+  } catch (error) {
+    console.warn('[primordia] 重读本层变量失败:', error);
+    mvuReloadNotice.value = '读取失败';
+  } finally {
+    mvuReloading.value = false;
+    mvuReloadNoticeTimer = window.setTimeout(() => {
+      mvuReloadNotice.value = '';
+    }, 2600);
+  }
+}
+
 onMounted(() => {
   syncFocusMode();
   document.addEventListener('click', handleDocumentClick);
@@ -84,6 +106,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  window.clearTimeout(mvuReloadNoticeTimer);
   document.removeEventListener('click', handleDocumentClick);
   document.removeEventListener('keydown', handleEscape);
   document.removeEventListener('fullscreenchange', handleFullscreenChange);
@@ -152,6 +175,16 @@ onUnmounted(() => {
 
     <!-- 右: 多币种 + 声望 + 精力 -->
     <div class="hud-right">
+      <button
+        class="variable-reload"
+        type="button"
+        :title="mvuReloadNotice || '重新读取本层变量；只刷新前端显示，不写回变量'"
+        :disabled="mvuReloading"
+        @click="reloadCurrentFloorVariables"
+      >
+        <PmIcon name="refresh" :size="13" />
+        <span>{{ mvuReloading ? '读取中' : '重读变量' }}</span>
+      </button>
       <button
         class="focus-toggle"
         type="button"
@@ -422,6 +455,30 @@ onUnmounted(() => {
   color: var(--pm-parch-soft);
   cursor: pointer;
 }
+.variable-reload {
+  min-height: 30px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: 1px solid var(--pm-line-soft);
+  border-radius: 4px;
+  background: var(--pm-dark-panel-soft);
+  color: var(--pm-gold-bright);
+  cursor: pointer;
+  font-family: var(--pm-font-display);
+  font-size: calc(11px * var(--pm-text-scale));
+  white-space: nowrap;
+}
+.variable-reload:hover:not(:disabled) {
+  border-color: var(--pm-line-bright);
+  background: rgba(201, 160, 74, 0.16);
+}
+.variable-reload:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
 .focus-toggle:hover {
   border-color: var(--pm-line-bright);
   color: var(--pm-gold-bright);
@@ -570,6 +627,14 @@ onUnmounted(() => {
   }
   .settings-toggle {
     display: none;
+  }
+  .variable-reload span {
+    display: none;
+  }
+  .variable-reload {
+    width: 30px;
+    padding: 4px;
+    justify-content: center;
   }
   .hud-right::-webkit-scrollbar,
   .hud-center::-webkit-scrollbar {
