@@ -441,7 +441,7 @@ const FIXED_CALENDAR_EVENTS: CalendarEvent[] = [
   },
 ];
 
-export type CraftMode = 'cooking' | 'sauce' | 'drink';
+export type CraftMode = 'cooking' | 'sauce' | 'drink' | 'brew';
 
 export interface RecipeIngredient {
   name: string;
@@ -990,7 +990,7 @@ export type GameAction =
     }
   | {
       type: 'COOK_DISH';
-      mode: 'cooking' | 'sauce' | 'drink';
+      mode: CraftMode;
       items: CraftActionItem[];
     }
   | {
@@ -5844,11 +5844,12 @@ export const useGameStore = defineStore('primordia', () => {
   function craftModeLabel(mode: Extract<GameAction, { type: 'COOK_DISH' }>['mode']) {
     if (mode === 'sauce') return '做酱';
     if (mode === 'drink') return '做饮品';
+    if (mode === 'brew') return '酿酒';
     return '做菜';
   }
 
   function craftResultCategory(mode: Extract<GameAction, { type: 'COOK_DISH' }>['mode']): InventoryItem['category'] {
-    return mode === 'drink' ? '酒水' : '成品';
+    return mode === 'drink' ? '酒水' : mode === 'brew' ? '酒水' : '成品';
   }
 
   function normalizeCraftItems(items: CraftActionItem[]) {
@@ -5910,7 +5911,7 @@ export const useGameStore = defineStore('primordia', () => {
     ingredients: RecipeIngredient[],
   ) {
     const pendingName =
-      mode === 'drink' ? '待命名饮品' : mode === 'sauce' ? '待命名酱料' : '待命名菜品';
+      mode === 'brew' ? '待命名酒桶' : mode === 'drink' ? '待命名饮品' : mode === 'sauce' ? '待命名酱料' : '待命名菜品';
     const recipeSource: RecipeSource = {
       mode,
       ingredients: clonePlain(ingredients),
@@ -6009,6 +6010,7 @@ export const useGameStore = defineStore('primordia', () => {
     void writeChatSave();
 
     const modeLabel = craftModeLabel(action.mode);
+    const isBrewing = action.mode === 'brew';
     pushLog('结算', `${modeLabel}材料已扣除 · ${summary}`);
     return {
       ok: true,
@@ -6025,18 +6027,18 @@ export const useGameStore = defineStore('primordia', () => {
         '输出顺序必须是: <maintext>制作过程叙述</maintext>，然后再输出下面的隐藏数据块，供前端把占位成品改成正式结果:',
         '<craft_result>',
         `编号: ${craftId}`,
-        `类型: ${action.mode === 'drink' ? '饮品' : action.mode === 'sauce' ? '酱料' : '菜品'}`,
+        `类型: ${action.mode === 'brew' ? '酒水' : action.mode === 'drink' ? '饮品' : action.mode === 'sauce' ? '酱料' : '菜品'}`,
         '名称: 这里填写成品名',
-        action.mode === 'sauce' ? '去向: 成品 / 调料 / 酒窖桶' : action.mode === 'drink' ? '去向: 酒水 / 酒窖桶' : '去向: 成品',
+        action.mode === 'brew' ? '去向: 酒窖桶' : action.mode === 'sauce' ? '去向: 成品 / 调料' : action.mode === 'drink' ? '去向: 酒水' : '去向: 成品',
         '数量: 1',
         '搭配判定: 灾难级 / 严重冲突 / 轻微冲突 / 无冲突 / 经典搭配 / 绝佳搭配 / 奇迹',
         '标签: 用逗号分隔',
         '气味标签: 用逗号分隔',
         '价格: 例如 3银80铜',
         '是否可上菜: 是 / 否',
-        action.mode === 'sauce' || action.mode === 'drink' ? '桶名: 若去向为酒窖桶则填写' : '',
-        action.mode === 'sauce' || action.mode === 'drink' ? '开始日: 若去向为酒窖桶则填写' : '',
-        action.mode === 'sauce' || action.mode === 'drink' ? '预计收获日: 若去向为酒窖桶则填写' : '',
+        isBrewing ? '桶名: 这批酒桶的名称' : '',
+        isBrewing ? '开始日: 酿造开始日期' : '',
+        isBrewing ? '预计收获日: 可开桶灌装日期' : '',
         '描述: 一句话说明',
         '</craft_result>',
       ]
@@ -6123,19 +6125,22 @@ export const useGameStore = defineStore('primordia', () => {
 
   function applyCraftResult(result?: ParsedCraftResult, options: { refreshExisting?: boolean } = {}) {
     if (!result?.name) return false;
-    const isBarrel = /酒窖|桶|熟成|发酵|陈放/.test(result.destination);
     const pending = findPendingCraftItem(result.craftId);
     const recipeSource = pending?.recipeSource ? clonePlain(pending.recipeSource) : findPendingCraftSource(result.craftId);
+    const isBarrelDestination = /酒窖|桶|熟成|发酵|陈放/.test(result.destination);
+    const isBarrel = recipeSource?.mode === 'brew' || (isBarrelDestination && !recipeSource?.mode);
     const tags = [...new Set([...result.tags, ...result.aromaTags])];
 
     if (isBarrel) {
+      const startedDay = dayNumberFromValue(result.startDay, currentCalendarDay());
+      const matureDay = dayNumberFromValue(result.matureDay, startedDay + 3);
       if (pending) pending.qty = 0;
       inventory.value = inventory.value.filter(item => item.qty > 0 && !isPendingCraftItem(item));
       brews.value.push({
         id: `b-craft-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         name: result.barrelName || `${result.name}桶`,
-        startedDay: calendar.day,
-        matureDay: calendar.day + 3,
+        startedDay,
+        matureDay: Math.max(startedDay + 1, matureDay),
         expected: result.name,
         filling: `${result.type} · ${tags.join('、') || '待熟成'}`,
         brewType: result.type || '酒水',

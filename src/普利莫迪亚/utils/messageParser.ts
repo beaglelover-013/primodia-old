@@ -665,10 +665,19 @@ export function parseShop(messageContent: string): ParsedShop | undefined {
   return { name, keeper, description, products };
 }
 
+function normalizeCraftFieldValue(value: string): string {
+  return value
+    .split(/\r?\n/)
+    .map(line => line.trim().replace(/^[-*•]\s*/, '').trim())
+    .filter(Boolean)
+    .join('、')
+    .trim();
+}
+
 function readCraftField(craftText: string, fields: string[]): string {
   for (const field of fields) {
-    const match = craftText.match(new RegExp(`^${field}[:：]\\s*(.+)$`, 'im'));
-    if (match?.[1]?.trim()) return match[1].trim();
+    const match = craftText.match(new RegExp(`^${field}[:：]\\s*([^\\n]*(?:\\n(?!\\s*(?:[\\u4e00-\\u9fa5A-Za-z][\\u4e00-\\u9fa5A-Za-z0-9_（）()\\s]{0,18})[:：]|\\s*</?craft_result\\b)[^\\n]*)*)`, 'im'));
+    if (match?.[1]?.trim()) return normalizeCraftFieldValue(match[1]);
   }
   return '';
 }
@@ -677,7 +686,7 @@ function splitCraftList(raw: string): string[] {
   return raw
     .replace(/^标签[:：]\s*/, '')
     .split(/[,，、]/)
-    .map(item => item.trim())
+    .map(item => item.trim().replace(/^[-*•]\s*/, '').trim())
     .filter(Boolean);
 }
 
@@ -716,7 +725,7 @@ function parseCraftResultJson(craftText: string): ParsedCraftResult | undefined 
     readJsonFirstString(record, ['去向', '放入', '目标', '入库分类', 'destination']) ||
     (type.includes('饮') ? '酒水' : '成品');
   const quantity = Math.max(1, readJsonNumber(record.数量 ?? record.产量 ?? record.quantity ?? record.yield, 1));
-  const priceCopper = readJsonNumber(record.价格 ?? record.售价 ?? record.单价 ?? record.单份售价 ?? record.priceCopper, 0);
+  const priceCopper = readJsonNumber(record.价格 ?? record.售价 ?? record.单价 ?? record.单份售价 ?? record.单杯售价 ?? record.每杯售价 ?? record.单瓶售价 ?? record.每瓶售价 ?? record.priceCopper, 0);
   const serveableText = readJsonFirstString(record, ['是否可上菜', '可上菜', '可直接上桌', 'serveable']);
   const serveable = !/否|不|不能|不可/.test(serveableText || '') && !/酒窖|桶|熟成|发酵/.test(destination);
   const tags = [
@@ -768,7 +777,7 @@ export function parseCraftResult(messageContent: string): ParsedCraftResult | un
   const type = readCraftField(craftText, ['类型', '菜品分类', '分类', '品类']) || '菜品';
   const destination = readCraftField(craftText, ['去向', '放入', '目标']) || (type.includes('饮') ? '酒水' : '成品');
   const quantity = Math.max(1, Number(readCraftField(craftText, ['数量', '产量']).replace(/[^\d]/g, '')) || 1);
-  const priceCopper = parseCopperValue(readCraftField(craftText, ['价格', '售价', '单价', '单份售价']));
+  const priceCopper = parseCopperValue(readCraftField(craftText, ['价格', '售价', '单价', '单份售价', '单杯售价', '每杯售价', '单瓶售价', '每瓶售价']));
   const serveableText = readCraftField(craftText, ['是否可上菜', '可上菜', '可直接上桌']);
   const serveable = !/否|不|不能|不可/.test(serveableText || '') && !/酒窖|桶|熟成|发酵/.test(destination);
 

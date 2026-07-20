@@ -13,12 +13,14 @@ const filters: Array<{ id: RecipeFilter; label: string }> = [
   { id: 'cooking', label: '菜品' },
   { id: 'sauce', label: '酱料' },
   { id: 'drink', label: '饮品' },
+  { id: 'brew', label: '酿酒' },
 ];
 
 const modeLabels: Record<CraftMode, string> = {
   cooking: '菜品',
   sauce: '酱料',
   drink: '饮品',
+  brew: '酿酒',
 };
 
 const currentFilter = ref<RecipeFilter>('全部');

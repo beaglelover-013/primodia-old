@@ -15,7 +15,7 @@ interface SlotEntry {
   itemId: string;
   qty: number;
 }
-type CraftMode = 'cooking' | 'sauce' | 'drink';
+type CraftMode = 'cooking' | 'sauce' | 'drink' | 'brew';
 
 const slots = ref<SlotEntry[]>([]);
 const slotLogIds = ref<string[]>([]);
@@ -28,6 +28,7 @@ const craftModeLabels: Record<CraftMode, string> = {
   cooking: '做菜',
   sauce: '做酱',
   drink: '做饮品',
+  brew: '酿酒',
 };
 const isSatchelView = computed(() => inventoryView.value === 'satchel');
 const canUseStorageHere = computed(() => ['酒馆', '库房炉台', '农田酒窖'].includes(game.currentSceneType));
@@ -443,6 +444,11 @@ function makeDrink() {
   recordCraftAction('drink');
 }
 
+function makeBrew() {
+  if (!basketSummary.value) return;
+  recordCraftAction('brew');
+}
+
 async function serveItems() {
   if (!basketSummary.value) return;
   if (!canServeSelection.value) {
@@ -688,7 +694,7 @@ function qualityTone(q?: InventoryItem['quality']) {
               <div class="craft-label">制作</div>
               <div class="craft-tabs">
                 <button
-                  v-for="mode in (['cooking', 'sauce', 'drink'] as CraftMode[])"
+                  v-for="mode in (['cooking', 'sauce', 'drink', 'brew'] as CraftMode[])"
                   :key="mode"
                   class="craft-tab"
                   :class="{ active: craftMode === mode }"
@@ -739,6 +745,9 @@ function qualityTone(q?: InventoryItem['quality']) {
             </button>
             <button class="pm-btn dark" :class="{ ghost: craftMode !== 'drink' }" :disabled="slots.length === 0" @click="makeDrink">
               <PmIcon name="coin" :size="13" /> 做饮品
+            </button>
+            <button class="pm-btn dark" :class="{ ghost: craftMode !== 'brew' }" :disabled="slots.length === 0" @click="makeBrew">
+              <PmIcon name="flourish" :size="13" /> 酿酒
             </button>
             <button class="pm-btn dark" :class="{ ghost: craftMode !== 'cooking' }" :disabled="slots.length === 0" @click="makeCooking">
               <PmIcon name="fire" :size="13" /> 做菜
