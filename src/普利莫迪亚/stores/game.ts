@@ -1605,6 +1605,11 @@ function normalizeItemQualityLabel(value: string | undefined): InventoryItem['qu
   return normalizeQuality(value);
 }
 
+function normalizeCraftDisplayTags(tags: string[]) {
+  const hiddenTags = new Set(['AI生成', '前端生成', '系统生成', '已保存']);
+  return [...new Set(tags.map(tag => String(tag).trim()).filter(tag => tag && !hiddenTags.has(tag)))];
+}
+
 function normalizeMapType(value: string | undefined): MapNode['type'] {
   const text = String(value ?? '').trim();
   const allowed: MapNode['type'][] = ['都市', '城市', '城镇', '村落', '村庄', '关隘', '秘境', '深界入口', '特殊地点'];
@@ -6108,13 +6113,14 @@ export const useGameStore = defineStore('primordia', () => {
         ? '调料'
         : '成品';
     const quality = normalizeItemQualityLabel(result.quality);
+    const displayTags = normalizeCraftDisplayTags(tags);
     const item: InventoryItem = {
       id: pending?.id || `i-craft-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       name: result.name,
       category,
       qty: result.quantity,
-      tags: tags.length ? tags : ['AI生成'],
-      ...(quality ? { quality } : {}),
+      tags: displayTags,
+      quality,
       desc: result.description,
       priceCopper: result.priceCopper || pending?.priceCopper || undefined,
       ...(recipeSource ? { recipeSource } : {}),

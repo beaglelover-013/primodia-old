@@ -428,6 +428,13 @@ function readJsonStringList(record: Record<string, any>, keys: string[]): string
       const list = value.map(readJsonString).filter(Boolean);
       if (list.length) return list;
     }
+    if (value && typeof value === 'object') {
+      const list = Object.values(value as Record<string, unknown>).flatMap(entry => {
+        if (Array.isArray(entry)) return entry.map(readJsonString).filter(Boolean);
+        return readJsonString(entry) ? [readJsonString(entry)] : [];
+      });
+      if (list.length) return list;
+    }
     const text = readJsonString(value);
     if (text) {
       return text
@@ -441,6 +448,14 @@ function readJsonStringList(record: Record<string, any>, keys: string[]): string
 
 function readJsonTags(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(readJsonString).filter(Boolean);
+  if (value && typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>).flatMap(([key, entry]) => {
+      if (/^(搭配等级|搭配判定|品质|quality)$/i.test(key.trim())) return [];
+      if (Array.isArray(entry)) return entry.map(readJsonString).filter(Boolean);
+      const text = readJsonString(entry);
+      return text ? [text] : [];
+    });
+  }
   return readJsonString(value)
     .split(/[,，、]/)
     .map(tag => tag.trim())
@@ -721,15 +736,32 @@ function parseCraftResultJson(craftText: string): ParsedCraftResult | undefined 
   const type =
     readJsonFirstString(record, ['类型', '菜品分类', '分类', '品类', 'category', 'type']) ||
     (record.饮品名 ? '饮品' : '菜品');
+  const tagRecord = record.tags && typeof record.tags === 'object' && !Array.isArray(record.tags)
+    ? (record.tags as Record<string, unknown>)
+    : {};
   const destination =
     readJsonFirstString(record, ['去向', '放入', '目标', '入库分类', 'destination']) ||
     (type.includes('饮') ? '酒水' : '成品');
   const quantity = Math.max(1, readJsonNumber(record.数量 ?? record.产量 ?? record.quantity ?? record.yield, 1));
-  const priceCopper = readJsonNumber(record.价格 ?? record.售价 ?? record.单价 ?? record.单份售价 ?? record.单杯售价 ?? record.每杯售价 ?? record.单瓶售价 ?? record.每瓶售价 ?? record.priceCopper, 0);
+  const priceCopper = readJsonNumber(
+    record.价格 ??
+      record.售价 ??
+      record.单价 ??
+      record.单份售价 ??
+      record.单杯售价 ??
+      record.每杯售价 ??
+      record.单瓶售价 ??
+      record.每瓶售价 ??
+      record.priceCopper ??
+      record.price_copper ??
+      record.unitPriceCopper ??
+      record.unit_price_copper,
+    0,
+  );
   const serveableText = readJsonFirstString(record, ['是否可上菜', '可上菜', '可直接上桌', 'serveable']);
   const serveable = !/否|不|不能|不可/.test(serveableText || '') && !/酒窖|桶|熟成|发酵/.test(destination);
   const tags = [
-    ...readJsonStringList(record, ['标签', 'tags']),
+    ...readJsonTags(record.标签 ?? record.tags),
     ...readJsonStringList(record, ['味觉', '味觉标签']),
     ...readJsonStringList(record, ['口感', '口感标签']),
     ...readJsonStringList(record, ['结构型风味']),
@@ -755,7 +787,7 @@ function parseCraftResultJson(craftText: string): ParsedCraftResult | undefined 
     startDay: readJsonFirstString(record, ['开始日', '酿造开始日', 'startDay']) || undefined,
     matureDay: readJsonFirstString(record, ['预计收获日', '收获日', '成熟日', 'matureDay']) || undefined,
     quantity,
-    quality: readJsonFirstString(record, ['搭配判定', '搭配等级', '品质', 'quality']) || undefined,
+    quality: readJsonFirstString(record, ['搭配判定', '搭配等级', '品质', 'quality']) || readJsonFirstString(tagRecord, ['搭配判定', '搭配等级', '品质', 'quality']) || undefined,
     tags: [...new Set(tags)],
     aromaTags: readJsonStringList(record, ['气味', '气味标签', '气息', '气息标签', 'aromaTags']),
     priceCopper,
@@ -777,7 +809,7 @@ export function parseCraftResult(messageContent: string): ParsedCraftResult | un
   const type = readCraftField(craftText, ['类型', '菜品分类', '分类', '品类']) || '菜品';
   const destination = readCraftField(craftText, ['去向', '放入', '目标']) || (type.includes('饮') ? '酒水' : '成品');
   const quantity = Math.max(1, Number(readCraftField(craftText, ['数量', '产量']).replace(/[^\d]/g, '')) || 1);
-  const priceCopper = parseCopperValue(readCraftField(craftText, ['价格', '售价', '单价', '单份售价', '单杯售价', '每杯售价', '单瓶售价', '每瓶售价']));
+  const priceCopper = parseCopperValue(readCraftField(craftText, ['价格', '售价', '单价', '单份售价', '单杯售价', '每杯售价', '单瓶售价', '每瓶售价', 'priceCopper', 'price_copper', 'unitPriceCopper', 'unit_price_copper']));
   const serveableText = readCraftField(craftText, ['是否可上菜', '可上菜', '可直接上桌']);
   const serveable = !/否|不|不能|不可/.test(serveableText || '') && !/酒窖|桶|熟成|发酵/.test(destination);
 
