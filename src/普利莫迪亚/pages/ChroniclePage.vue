@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useGameStore, type InventoryItem, type PromiseMemo } from '../stores/game';
 import PmIcon from '../components/PmIcon.vue';
 import {
@@ -50,6 +50,13 @@ let longPressTimer: number | null = null;
 let messageEventStops: EventOnReturn[] = [];
 let storyStreamingStop: (() => void) | undefined;
 let storyUpdatedStop: (() => void) | undefined;
+
+function openPromiseRailFromShortcut() {
+  isPromiseRailOpen.value = true;
+  nextTick(() => {
+    document.querySelector<HTMLElement>('.promise-rail')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
 
 const hasMaintext = computed(() => latestMessage.value.maintext.trim().length > 0);
 const storyParagraphs = computed(() =>
@@ -541,6 +548,7 @@ onMounted(() => {
     };
     showOptions.value = false;
   });
+  window.addEventListener('primordia-open-promises', openPromiseRailFromShortcut);
   if (typeof eventOn !== 'function' || typeof tavern_events === 'undefined') return;
 
   messageEventStops = [
@@ -566,6 +574,7 @@ onUnmounted(() => {
   storyUpdatedStop = undefined;
   storyStreamingStop?.();
   storyStreamingStop = undefined;
+  window.removeEventListener('primordia-open-promises', openPromiseRailFromShortcut);
 });
 
 watch(

@@ -44,7 +44,7 @@ async function previewBeforeSend() {
 async function retryLatestCapture() {
   if (captureRetrying.value || game.isGenerating) return;
   captureRetrying.value = true;
-  captureNotice.value = '正在扫描最新正文…';
+  captureNotice.value = '正在扫描本回合消息…';
   window.clearTimeout(captureNoticeTimer);
   try {
     const captured = await game.retryLatestTurnCapture();
@@ -126,7 +126,7 @@ function logTitle(log: EngineLog) {
         <button
           class="capture-retry"
           type="button"
-          title="重新读取最新助手正文，并重试本回合的变量与格式捕捉"
+          title="重新读取本回合全部助手消息，并重试变量与格式捕捉"
           :disabled="captureRetrying || game.isGenerating"
           @click="retryLatestCapture"
         >

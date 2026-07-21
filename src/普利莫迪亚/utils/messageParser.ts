@@ -313,8 +313,15 @@ function findPreviousUserMessageId(messageId?: number): number | undefined {
   return undefined;
 }
 
-function parseStoryMessage(messageContent: string, messageId?: number): StoryMessagePayload {
-  const parsedContent = extractEmbeddedNormalizedMessages(messageContent).at(-1) ?? messageContent;
+function parseStoryMessage(
+  messageContent: string,
+  messageId?: number,
+  options: { preferEmbeddedNormalized?: boolean } = {},
+): StoryMessagePayload {
+  const embeddedMessages = extractEmbeddedNormalizedMessages(messageContent);
+  const parsedContent = options.preferEmbeddedNormalized === false
+    ? [messageContent, ...embeddedMessages].filter(Boolean).join('\n\n')
+    : embeddedMessages.at(-1) ?? messageContent;
   return {
     maintext: parseMaintext(parsedContent),
     options: parseOptions(parsedContent),
@@ -1273,6 +1280,32 @@ export function loadLatestAssistantMaintext(): LatestMaintextPayload {
   return index.at(-1) ?? { maintext: '', options: [], sum: '' };
 }
 
+function readLatestAssistantTurnMessages(candidates: any[]): any[] {
+  const latest = candidates.at(-1);
+  if (!latest || typeof latest.message_id !== 'number') return [];
+
+  const previousUserId = findPreviousUserMessageId(latest.message_id);
+  const lowerBound = typeof previousUserId === 'number' ? previousUserId : -1;
+  return candidates.filter(message => {
+    const id = message?.message_id;
+    return typeof id === 'number' && id > lowerBound && id <= latest.message_id;
+  });
+}
+
+function parseLatestAssistantTurnCapture(candidates: any[]): StoryMessagePayload | undefined {
+  const turnMessages = readLatestAssistantTurnMessages(candidates);
+  const latest = turnMessages.at(-1);
+  if (!latest || typeof latest.message_id !== 'number') return undefined;
+
+  const fullMessage = turnMessages
+    .map(message => String(message?.message ?? '').trim())
+    .filter(Boolean)
+    .join('\n\n');
+  if (!fullMessage.trim()) return undefined;
+
+  return parseStoryMessage(fullMessage, latest.message_id, { preferEmbeddedNormalized: false });
+}
+
 function hasCapturedStoryFormat(payload: StoryMessagePayload): boolean {
   return Boolean(
     payload.shop ||
@@ -1291,6 +1324,9 @@ export function loadLatestAssistantCapture(): LatestMaintextPayload {
   try {
     if (typeof getLastMessageId !== 'function') return loadLatestAssistantMaintext();
     const candidates = readAssistantStoryCandidates(getLastMessageId());
+    const turnCapture = parseLatestAssistantTurnCapture(candidates);
+    if (turnCapture && (isUsableStoryText(turnCapture.maintext) || hasCapturedStoryFormat(turnCapture))) return turnCapture;
+
     for (let index = candidates.length - 1; index >= 0; index -= 1) {
       const message = candidates[index];
       const parsed = parseStoryMessage(String(message?.message ?? ''), message?.message_id);

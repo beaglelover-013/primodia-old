@@ -5,6 +5,7 @@ import PmIcon from '../components/PmIcon.vue';
 import { tagToneClass } from '../utils/tagAppearance';
 
 const game = useGameStore();
+const cauldronImage = new URL('../assets/kitchen-cauldron.png', import.meta.url).href;
 
 interface SlotEntry {
   itemId: string;
@@ -394,12 +395,7 @@ function itemTone(item: InventoryItem) {
           @drop.prevent="onPotDrop"
         >
           <div class="pot-visual">
-            <div class="steam s1"></div>
-            <div class="steam s2"></div>
-            <div class="steam s3"></div>
-            <div class="pot-bowl">
-              <span></span>
-            </div>
+            <img class="cauldron-art" :src="cauldronImage" alt="" draggable="false" />
           </div>
 
           <header class="pot-head">
@@ -416,18 +412,6 @@ function itemTone(item: InventoryItem) {
               <span>{{ slotText(slot) }}</span>
               <button title="减少一个用量单位" @click="decSlot(index)"><PmIcon name="minus" :size="12" /></button>
             </div>
-          </div>
-
-          <div class="mode-tabs">
-            <button
-              v-for="mode in (['cooking', 'sauce', 'drink', 'brew'] as CraftMode[])"
-              :key="mode"
-              class="mode-tab"
-              :class="{ active: craftMode === mode }"
-              @click="craftMode = mode"
-            >
-              {{ craftModeLabels[mode] }}
-            </button>
           </div>
 
           <div class="cook-preview">
@@ -729,64 +713,35 @@ function itemTone(item: InventoryItem) {
   position: relative;
   display: grid;
   place-items: center;
-  min-height: 128px;
+  min-height: 190px;
+  isolation: isolate;
 }
-.pot-bowl {
-  position: relative;
-  width: min(260px, 78%);
-  height: 82px;
-  border: 2px solid rgba(55, 38, 21, 0.82);
-  border-radius: 16px 16px 42px 42px;
-  background: linear-gradient(180deg, #5a4632, #21170f);
-  box-shadow:
-    inset 0 10px 0 rgba(255, 255, 255, 0.08),
-    0 18px 30px -22px rgba(0, 0, 0, 0.72);
-}
-.pot-bowl::before,
-.pot-bowl::after {
+.pot-visual::before {
   position: absolute;
-  top: 19px;
-  width: 38px;
-  height: 16px;
-  border: 2px solid rgba(55, 38, 21, 0.82);
-  content: '';
-}
-.pot-bowl::before {
-  left: -34px;
-  border-right: 0;
-  border-radius: 16px 0 0 16px;
-}
-.pot-bowl::after {
-  right: -34px;
-  border-left: 0;
-  border-radius: 0 16px 16px 0;
-}
-.pot-bowl span {
-  position: absolute;
-  left: 12%;
-  right: 12%;
-  top: 14px;
-  height: 14px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(110, 139, 76, 0.78), rgba(201, 160, 74, 0.88), rgba(151, 69, 35, 0.76));
-}
-.steam {
-  position: absolute;
-  bottom: 82px;
-  width: 28px;
-  height: 52px;
-  border-left: 2px solid rgba(110, 80, 34, 0.36);
-  border-radius: 50%;
-}
-.s1 {
-  left: 38%;
-}
-.s2 {
   left: 50%;
-  height: 66px;
+  bottom: 15px;
+  width: min(310px, 78%);
+  height: 36px;
+  border: 1px solid rgba(90, 61, 31, 0.26);
+  border-radius: 999px;
+  background:
+    radial-gradient(ellipse at center, rgba(206, 99, 30, 0.24), transparent 38%),
+    radial-gradient(ellipse at center, rgba(61, 42, 25, 0.34), rgba(61, 42, 25, 0.08) 62%, transparent 72%);
+  transform: translateX(-50%);
+  content: '';
+  z-index: 0;
 }
-.s3 {
-  left: 62%;
+.cauldron-art {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: min(290px, 82%);
+  height: auto;
+  pointer-events: none;
+  user-select: none;
+  filter:
+    drop-shadow(0 16px 20px rgba(43, 28, 15, 0.28))
+    drop-shadow(0 0 18px rgba(190, 99, 32, 0.12));
 }
 .pot-head {
   display: flex;
@@ -828,27 +783,12 @@ function itemTone(item: InventoryItem) {
   background: linear-gradient(180deg, #ead19a, #bd8e43);
   color: var(--pm-ink);
 }
-.mode-tabs,
 .bench-actions,
 .product-actions,
 .recipe-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
-}
-.mode-tab {
-  min-height: 31px;
-  padding: 5px 12px;
-  border: 1px solid rgba(110, 80, 34, 0.4);
-  border-radius: 4px;
-  background: rgba(255, 245, 215, 0.55);
-  color: var(--pm-ink-soft);
-  font-weight: 700;
-}
-.mode-tab.active {
-  color: var(--pm-ink);
-  border-color: rgba(167, 121, 45, 0.86);
-  background: var(--pm-grad-gold);
 }
 .cook-preview,
 .serve-target {
@@ -980,12 +920,131 @@ function itemTone(item: InventoryItem) {
     position: static;
   }
 }
+@media (max-width: 760px) {
+  .kitchen-page {
+    overflow-x: hidden;
+  }
+  .kitchen-head {
+    align-items: flex-start;
+  }
+  .kitchen-head .head-actions,
+  .kitchen-head .pm-btn {
+    width: 100%;
+  }
+  .spice-rack,
+  .pantry-panel,
+  .pot-station,
+  .product-panel,
+  .recipe-panel {
+    padding: 9px;
+  }
+  .spice-rack header,
+  .pantry-panel header,
+  .product-panel header,
+  .recipe-panel header,
+  .pot-head {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .rack-scroll {
+    margin: 0 -9px;
+    padding: 0 9px 6px;
+    scroll-snap-type: x proximity;
+  }
+  .rack-scroll .kitchen-item {
+    min-width: 136px;
+    scroll-snap-align: start;
+  }
+  .kitchen-main {
+    display: flex;
+    flex-direction: column;
+  }
+  .pot-station {
+    order: -1;
+  }
+  .pot-visual {
+    min-height: 164px;
+  }
+  .cauldron-art {
+    width: min(250px, 86%);
+  }
+  .item-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ingredient-card,
+  .product-card,
+  .mini-recipe {
+    gap: 6px;
+    padding: 8px;
+  }
+  .card-top {
+    display: grid;
+    gap: 3px;
+  }
+  .card-top strong {
+    overflow-wrap: anywhere;
+  }
+  .selected-line {
+    align-items: flex-start;
+  }
+  .selected-line span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .serve-target-list {
+    max-height: 160px;
+  }
+  .bench-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .bench-actions .pm-btn {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+  }
+  .product-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 @media (max-width: 620px) {
   .item-grid {
     grid-template-columns: 1fr;
   }
   .bench-actions .pm-btn {
     flex: 1 1 132px;
+  }
+}
+@media (max-width: 420px) {
+  .kitchen-layout {
+    gap: 9px;
+  }
+  .spice-rack h3,
+  .pantry-panel h3,
+  .product-panel h3,
+  .recipe-panel h3,
+  .pot-head h3 {
+    font-size: calc(14px * var(--pm-text-scale));
+  }
+  .pot-visual {
+    min-height: 142px;
+  }
+  .cauldron-art {
+    width: min(218px, 88%);
+  }
+  .bench-actions,
+  .product-actions,
+  .recipe-actions {
+    grid-template-columns: 1fr;
+  }
+  .recipe-actions input {
+    height: 32px;
+  }
+  .side-tabs button,
+  .product-actions button,
+  .recipe-actions button {
+    min-height: 34px;
   }
 }
 </style>

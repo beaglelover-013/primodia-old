@@ -119,6 +119,15 @@ function selectGroup(group: NavGroup) {
 function switchTab(id: TabId) {
   game.currentTab = id;
 }
+
+function openMobilePromises() {
+  game.currentTab = 'chronicle';
+  window.dispatchEvent(new CustomEvent('primordia-open-promises'));
+}
+
+function openMobileSatchel() {
+  game.currentTab = 'inventory';
+}
 </script>
 
 <template>
@@ -167,6 +176,19 @@ function switchTab(id: TabId) {
         </button>
       </div>
     </nav>
+
+    <div class="mobile-quick-links" aria-label="手机快捷入口">
+      <button type="button" @click="openMobilePromises">
+        <PmIcon name="ledger" :size="13" />
+        <span>约定</span>
+        <strong>{{ game.promiseMemos.filter(memo => memo.status === 'pending').length }}</strong>
+      </button>
+      <button type="button" @click="openMobileSatchel">
+        <PmIcon name="ledger" :size="13" />
+        <span>行囊</span>
+        <strong>{{ game.satchel.filter(item => item.qty > 0).length }}</strong>
+      </button>
+    </div>
 
     <div class="scroll-foot">
       <div class="tavern-status" aria-label="酒馆声望">
@@ -399,6 +421,10 @@ function switchTab(id: TabId) {
   background: rgba(255, 255, 255, 0.025);
 }
 
+.mobile-quick-links {
+  display: none;
+}
+
 @media (min-width: 761px) {
   .sub-item.desktop-settings {
     display: none;
@@ -451,9 +477,10 @@ function switchTab(id: TabId) {
 
 @media (max-width: 760px) {
   .sidebar {
+    flex-direction: column;
     flex: 0 0 auto;
-    min-height: 96px;
-    max-height: 96px;
+    min-height: 130px;
+    max-height: 130px;
     width: 100%;
     overflow: hidden;
     border-top: 1px solid var(--pm-line-soft);
@@ -469,6 +496,44 @@ function switchTab(id: TabId) {
     gap: 4px;
     padding: 5px 7px 6px;
     overflow: hidden;
+  }
+  .mobile-quick-links {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    padding: 0 7px 7px;
+  }
+  .mobile-quick-links button {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
+    min-height: 28px;
+    padding: 4px 8px;
+    color: var(--pm-parch-bright);
+    background: rgba(214, 177, 84, 0.14);
+    border: 1px solid rgba(243, 220, 162, 0.25);
+    border-radius: 4px;
+    font-family: var(--pm-font-display);
+    font-size: calc(11px * var(--pm-text-scale));
+  }
+  .mobile-quick-links span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mobile-quick-links strong {
+    display: grid;
+    place-items: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    color: var(--pm-text-on-gold);
+    background: var(--pm-grad-gold);
+    border-radius: 999px;
+    font-family: var(--pm-font-num);
+    font-size: calc(10px * var(--pm-text-scale));
   }
   .nav-item {
     grid-template-columns: 1fr;
