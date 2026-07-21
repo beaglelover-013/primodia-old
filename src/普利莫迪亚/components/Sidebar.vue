@@ -62,7 +62,8 @@ const navGroups: NavGroup[] = [
     icon: 'pot',
     sub: '行囊 · 配方 · 农酿',
     items: [
-      { id: 'inventory', name: '行囊与库房', icon: 'pot', sub: '使用 · 入库 · 炉台', status: 'ready' },
+      { id: 'inventory', name: '行囊与库房', icon: 'ledger', sub: '使用 · 入库 · 取出', status: 'ready' },
+      { id: 'kitchen', name: '厨房炉台', icon: 'pot', sub: '做菜 · 调饮 · 上菜', status: 'ready' },
       { id: 'recipes', name: '配方簿', icon: 'ledger', sub: '复刻 · 记录', status: 'ready' },
       { id: 'farm', name: '农田与酒窖', icon: 'farm', sub: '种植 · 陈酿', status: 'ready' },
       { id: 'logistics', name: '后勤与圈舍', icon: 'ledger', sub: '布草 · 厩舍 · 禽畜', status: 'ready' },

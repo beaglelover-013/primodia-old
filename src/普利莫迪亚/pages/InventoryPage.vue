@@ -15,21 +15,12 @@ interface SlotEntry {
   itemId: string;
   qty: number;
 }
-type CraftMode = 'cooking' | 'sauce' | 'drink' | 'brew';
-
 const slots = ref<SlotEntry[]>([]);
 const slotLogIds = ref<string[]>([]);
 const selectedServeGuestId = ref('');
-const craftMode = ref<CraftMode>('cooking');
 type MoveDirection = 'to_storage' | 'to_satchel';
 const activeMove = ref<{ itemId: string; direction: MoveDirection; qty: number } | null>(null);
 const activeUse = ref<{ itemId: string; source: InventorySource; target: string } | null>(null);
-const craftModeLabels: Record<CraftMode, string> = {
-  cooking: '做菜',
-  sauce: '做酱',
-  drink: '做饮品',
-  brew: '酿酒',
-};
 const isSatchelView = computed(() => inventoryView.value === 'satchel');
 const canUseStorageHere = computed(() => ['酒馆', '库房炉台', '农田酒窖'].includes(game.currentSceneType));
 const canUseActiveInventory = computed(() => isSatchelView.value || canUseStorageHere.value);
@@ -45,12 +36,6 @@ const groupedByCat = computed(() => {
   return out;
 });
 const basketSummary = computed(() => summarizeSlots(slots.value));
-const basketCost = computed(() =>
-  slots.value.reduce((total, slot) => {
-    const item = findItem(slot.itemId);
-    return total + game.basePriceForPortion(item) * slot.qty;
-  }, 0),
-);
 const serveTotal = computed(() =>
   game.salePriceFromBase(slots.value.reduce((total, slot) => {
     const item = findItem(slot.itemId);
@@ -160,10 +145,6 @@ function availablePortions(it: InventoryItem) {
 function formatPortionCost(it: InventoryItem) {
   const value = game.basePriceForPortion(it);
   return `${Number.isInteger(value) ? value : Number(value.toFixed(2))}铜/${portionUnit(it)}`;
-}
-
-function formatAccountingCost(value: number) {
-  return `${Number.isInteger(value) ? value : Number(value.toFixed(2))}铜`;
 }
 
 function handleTileClick(it: InventoryItem) {
@@ -407,48 +388,6 @@ function selectedCraftItems() {
     .filter((item): item is NonNullable<typeof item> => item !== null);
 }
 
-async function recordCraftAction(mode: CraftMode) {
-  if (!basketSummary.value) return;
-  craftMode.value = mode;
-  const summaryBeforeAction = basketSummary.value;
-  const result = await game.executePseudoZeroAction({
-    type: 'COOK_DISH',
-    mode,
-    items: selectedCraftItems(),
-  }, {
-    type: 'COOK_DISH',
-    title: craftModeLabels[mode],
-    inputText: `玩家用这些材料${craftModeLabels[mode]}：${summaryBeforeAction}。`,
-    aiHint: '请按对应生成引擎叙述制作过程, 并输出 <craft_result> 隐藏数据块供前端入库。',
-    logText: `${craftModeLabels[mode]} · ${summaryBeforeAction}`,
-    preserveLocalState: true,
-  });
-  if (!result.ok) {
-    return;
-  }
-  clearSlots();
-}
-
-function makeCooking() {
-  if (!basketSummary.value) return;
-  recordCraftAction('cooking');
-}
-
-function makeSauce() {
-  if (!basketSummary.value) return;
-  recordCraftAction('sauce');
-}
-
-function makeDrink() {
-  if (!basketSummary.value) return;
-  recordCraftAction('drink');
-}
-
-function makeBrew() {
-  if (!basketSummary.value) return;
-  recordCraftAction('brew');
-}
-
 async function serveItems() {
   if (!basketSummary.value) return;
   if (!canServeSelection.value) {
@@ -499,10 +438,10 @@ function qualityTone(q?: InventoryItem['quality']) {
     <header class="pm-paper-head">
       <div>
         <h2 class="h-title">
-          <PmIcon name="pot" :size="22" />
+          <PmIcon name="ledger" :size="22" />
           行囊与库房
         </h2>
-        <div class="sub">行囊使用与入库 · 库房做菜或上菜 · 让叙事判断结果</div>
+        <div class="sub">行囊使用与入库 · 库房整理与取出 · 成品可在这里直接上菜</div>
       </div>
       <div class="head-actions">
         <button
@@ -547,7 +486,7 @@ function qualityTone(q?: InventoryItem['quality']) {
               :key="it.id"
               class="inv-tile"
               :class="{ compact: !isServeItem(it), clickable: !isSatchelView }"
-              :title="isSatchelView ? '行囊物品可使用或整理入库' : '加入本次选择'"
+              :title="isSatchelView ? '行囊物品可使用或整理入库' : '加入上菜选择'"
               @click="handleTileClick(it)"
             >
               <div class="inv-tile-top">
@@ -675,42 +614,19 @@ function qualityTone(q?: InventoryItem['quality']) {
         <div class="bench">
           <header class="bench-head">
             <div>
-              <h3>本次选择</h3>
-              <div class="pm-dim">{{ isSatchelView ? '行囊物品先整理进库房，再用于炉台。' : '库房物品能放进来，再决定做菜或上桌。' }}</div>
+              <h3>上菜选择</h3>
+              <div class="pm-dim">{{ isSatchelView ? '行囊物品先整理进库房，再用于厨房或上菜。' : '点击库房物品加入上菜选择；制作请前往厨房炉台。' }}</div>
             </div>
             <button class="pm-btn sm ghost" :disabled="slots.length === 0" @click="clearSlots">一键清空</button>
           </header>
 
           <section class="selected-box">
-            <div v-if="slots.length === 0" class="pm-empty">{{ isSatchelView ? '切到库房后，可以点选材料做菜或上菜。' : '点击任意库存卡片即可加入，每次加入一个用量单位。' }}</div>
+            <div v-if="slots.length === 0" class="pm-empty">{{ isSatchelView ? '切到库房后，可以点选物品上菜。' : '点击任意可上桌物品即可加入，每次加入一个用量单位。' }}</div>
             <div v-for="(slot, idx) in slots" v-else :key="slot.itemId" class="selected-line">
               <span>{{ slotText(slot) }}</span>
               <button title="减少一个用量单位" @click="decSlot(idx)"><PmIcon name="minus" :size="12" /></button>
             </div>
           </section>
-
-          <section class="craft-board">
-            <div class="craft-head">
-              <div class="craft-label">制作</div>
-              <div class="craft-tabs">
-                <button
-                  v-for="mode in (['cooking', 'sauce', 'drink', 'brew'] as CraftMode[])"
-                  :key="mode"
-                  class="craft-tab"
-                  :class="{ active: craftMode === mode }"
-                  @click="craftMode = mode"
-                >
-                  {{ craftModeLabels[mode] }}
-                </button>
-              </div>
-            </div>
-          </section>
-
-          <div class="cook-preview">
-            <span class="label">将写入</span>
-            <p>{{ basketSummary ? `用这些材料${craftModeLabels[craftMode]}「${basketSummary}」。` : '选择物品后会生成一句行动记录。' }}</p>
-            <small v-if="basketSummary">本次材料成本 {{ formatAccountingCost(basketCost) }}</small>
-          </div>
 
           <div class="serve-total">
             <span>上菜应收</span>
@@ -740,18 +656,6 @@ function qualityTone(q?: InventoryItem['quality']) {
           </div>
 
           <div class="bench-actions">
-            <button class="pm-btn dark" :class="{ ghost: craftMode !== 'sauce' }" :disabled="slots.length === 0" @click="makeSauce">
-              <PmIcon name="pot" :size="13" /> 做酱
-            </button>
-            <button class="pm-btn dark" :class="{ ghost: craftMode !== 'drink' }" :disabled="slots.length === 0" @click="makeDrink">
-              <PmIcon name="coin" :size="13" /> 做饮品
-            </button>
-            <button class="pm-btn dark" :class="{ ghost: craftMode !== 'brew' }" :disabled="slots.length === 0" @click="makeBrew">
-              <PmIcon name="flourish" :size="13" /> 酿酒
-            </button>
-            <button class="pm-btn dark" :class="{ ghost: craftMode !== 'cooking' }" :disabled="slots.length === 0" @click="makeCooking">
-              <PmIcon name="fire" :size="13" /> 做菜
-            </button>
             <button class="pm-btn dark" :disabled="!canServeSelection || (serveGuests.length > 0 && !selectedServeGuestId)" @click="serveItems">
               <PmIcon name="check" :size="13" /> 上菜
             </button>

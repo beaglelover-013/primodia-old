@@ -1,38 +1,42 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted } from 'vue';
 import { useGameStore } from './stores/game';
 import TopHud from './components/TopHud.vue';
 import Sidebar from './components/Sidebar.vue';
 import BottomDock from './components/BottomDock.vue';
 import PmIcon from './components/PmIcon.vue';
 import ServiceTray from './components/ServiceTray.vue';
-import OpeningWorkshop from './components/OpeningWorkshop.vue';
-
-import ChroniclePage from './pages/ChroniclePage.vue';
-import TavernPage from './pages/TavernPage.vue';
-import OperationsPage from './pages/OperationsPage.vue';
-import RegularGuestsPage from './pages/RegularGuestsPage.vue';
-import ProtagonistPage from './pages/ProtagonistPage.vue';
-import InventoryPage from './pages/InventoryPage.vue';
-import RecipesPage from './pages/RecipesPage.vue';
-import CharactersPage from './pages/CharactersPage.vue';
-import GalleryPage from './pages/GalleryPage.vue';
-import MapPage from './pages/MapPage.vue';
-import ShopPage from './pages/ShopPage.vue';
-import LedgerPage from './pages/LedgerPage.vue';
-import FarmBrewPage from './pages/FarmBrewPage.vue';
-import LogisticsPage from './pages/LogisticsPage.vue';
-import VariablesPage from './pages/VariablesPage.vue';
-import SettingsPage from './pages/SettingsPage.vue';
 import { activateSameFloorMode } from './utils/sameFloor';
 
 const game = useGameStore();
+const OpeningWorkshop = defineAsyncComponent(() => import('./components/OpeningWorkshop.vue'));
+const ChroniclePage = defineAsyncComponent(() => import('./pages/ChroniclePage.vue'));
+const TavernPage = defineAsyncComponent(() => import('./pages/TavernPage.vue'));
+const OperationsPage = defineAsyncComponent(() => import('./pages/OperationsPage.vue'));
+const RegularGuestsPage = defineAsyncComponent(() => import('./pages/RegularGuestsPage.vue'));
+const ProtagonistPage = defineAsyncComponent(() => import('./pages/ProtagonistPage.vue'));
+const InventoryPage = defineAsyncComponent(() => import('./pages/InventoryPage.vue'));
+const KitchenPage = defineAsyncComponent(() => import('./pages/KitchenPage.vue'));
+const RecipesPage = defineAsyncComponent(() => import('./pages/RecipesPage.vue'));
+const CharactersPage = defineAsyncComponent(() => import('./pages/CharactersPage.vue'));
+const GalleryPage = defineAsyncComponent(() => import('./pages/GalleryPage.vue'));
+const MapPage = defineAsyncComponent(() => import('./pages/MapPage.vue'));
+const ShopPage = defineAsyncComponent(() => import('./pages/ShopPage.vue'));
+const LedgerPage = defineAsyncComponent(() => import('./pages/LedgerPage.vue'));
+const FarmBrewPage = defineAsyncComponent(() => import('./pages/FarmBrewPage.vue'));
+const LogisticsPage = defineAsyncComponent(() => import('./pages/LogisticsPage.vue'));
+const VariablesPage = defineAsyncComponent(() => import('./pages/VariablesPage.vue'));
+const SettingsPage = defineAsyncComponent(() => import('./pages/SettingsPage.vue'));
 
 let hostFrameObserver: ResizeObserver | null = null;
 let hostFrameRaf = 0;
 let deactivateSameFloorMode: (() => void) | undefined;
 let authoritativeRefreshTimers: number[] = [];
+let authoritativeRefreshTimer = 0;
+let authoritativeRefreshRunning = false;
+let queuedAuthoritativeRefreshOptions: { clearMissingShop?: boolean } | null = null;
 const mvuEventStops: EventOnReturn[] = [];
+const tavernEventStops: EventOnReturn[] = [];
 let mvuEventsRegistered = false;
 
 function stopEventListeners(stops: EventOnReturn[]) {
@@ -64,6 +68,34 @@ async function refreshAuthoritativeState(options: { clearMissingShop?: boolean }
   nextTick(scheduleHostFrameSize);
 }
 
+function mergeRefreshOptions(options: { clearMissingShop?: boolean } = {}) {
+  queuedAuthoritativeRefreshOptions = {
+    clearMissingShop: Boolean(queuedAuthoritativeRefreshOptions?.clearMissingShop || options.clearMissingShop),
+  };
+}
+
+async function flushAuthoritativeStateRefresh() {
+  authoritativeRefreshTimer = 0;
+  if (authoritativeRefreshRunning) return;
+  const options = queuedAuthoritativeRefreshOptions ?? {};
+  queuedAuthoritativeRefreshOptions = null;
+  authoritativeRefreshRunning = true;
+  try {
+    await refreshAuthoritativeState(options);
+  } finally {
+    authoritativeRefreshRunning = false;
+    if (queuedAuthoritativeRefreshOptions) {
+      authoritativeRefreshTimer = window.setTimeout(flushAuthoritativeStateRefresh, 80);
+    }
+  }
+}
+
+function scheduleAuthoritativeStateRefresh(options: { clearMissingShop?: boolean } = {}, delay = 80) {
+  mergeRefreshOptions(options);
+  window.clearTimeout(authoritativeRefreshTimer);
+  authoritativeRefreshTimer = window.setTimeout(flushAuthoritativeStateRefresh, delay);
+}
+
 function syncHostFrameSize() {
   if (document.fullscreenElement || document.body.classList.contains('pm-focus-mode')) return;
   const frame = window.frameElement as HTMLElement | null;
@@ -93,7 +125,7 @@ function scheduleAuthoritativeStateRetries() {
   authoritativeRefreshTimers.forEach(timer => window.clearTimeout(timer));
   authoritativeRefreshTimers = [120, 420, 1000, 1800].map(delay =>
     window.setTimeout(() => {
-      refreshAuthoritativeState({ clearMissingShop: true });
+      scheduleAuthoritativeStateRefresh({ clearMissingShop: true }, 0);
     }, delay),
   );
 }
@@ -113,10 +145,10 @@ async function registerMvuStateSyncEvents() {
     mvuEventsRegistered = true;
     mvuEventStops.push(
       eventOn(mvu.events.VARIABLE_INITIALIZED, () => {
-        refreshAuthoritativeState({ clearMissingShop: true });
+        scheduleAuthoritativeStateRefresh({ clearMissingShop: true });
       }),
       eventOn(mvu.events.VARIABLE_UPDATE_ENDED, () => {
-        refreshAuthoritativeState({ clearMissingShop: true });
+        scheduleAuthoritativeStateRefresh({ clearMissingShop: true });
       }),
     );
   } catch (error) {
@@ -217,17 +249,19 @@ onMounted(() => {
     }
     scheduleHostFrameSize();
   });
-  refreshAuthoritativeState({ clearMissingShop: true });
+  scheduleAuthoritativeStateRefresh({ clearMissingShop: true }, 0);
   scheduleAuthoritativeStateRetries();
   void registerMvuStateSyncEvents();
   if (typeof eventOn !== 'function' || typeof tavern_events === 'undefined') return;
-  eventOn(tavern_events.USER_MESSAGE_RENDERED, refreshAuthoritativeState);
-  eventOn(tavern_events.MESSAGE_RECEIVED, refreshAuthoritativeState);
-  eventOn(tavern_events.MESSAGE_UPDATED, refreshAuthoritativeState);
-  eventOn(tavern_events.MESSAGE_EDITED, refreshAuthoritativeState);
-  eventOn(tavern_events.MESSAGE_SWIPED, () => refreshAuthoritativeState({ clearMissingShop: true }));
-  eventOn(tavern_events.CHAT_CHANGED, () => refreshAuthoritativeState({ clearMissingShop: true }));
-  eventOn(tavern_events.CHARACTER_MESSAGE_RENDERED, refreshAuthoritativeState);
+  tavernEventStops.push(
+    eventOn(tavern_events.USER_MESSAGE_RENDERED, () => scheduleAuthoritativeStateRefresh()),
+    eventOn(tavern_events.MESSAGE_RECEIVED, () => scheduleAuthoritativeStateRefresh()),
+    eventOn(tavern_events.MESSAGE_UPDATED, () => scheduleAuthoritativeStateRefresh()),
+    eventOn(tavern_events.MESSAGE_EDITED, () => scheduleAuthoritativeStateRefresh()),
+    eventOn(tavern_events.MESSAGE_SWIPED, () => scheduleAuthoritativeStateRefresh({ clearMissingShop: true })),
+    eventOn(tavern_events.CHAT_CHANGED, () => scheduleAuthoritativeStateRefresh({ clearMissingShop: true })),
+    eventOn(tavern_events.CHARACTER_MESSAGE_RENDERED, () => scheduleAuthoritativeStateRefresh()),
+  );
 });
 
 onUnmounted(() => {
@@ -237,7 +271,11 @@ onUnmounted(() => {
   window.removeEventListener('resize', scheduleHostFrameSize);
   authoritativeRefreshTimers.forEach(timer => window.clearTimeout(timer));
   authoritativeRefreshTimers = [];
+  window.clearTimeout(authoritativeRefreshTimer);
+  authoritativeRefreshTimer = 0;
+  queuedAuthoritativeRefreshOptions = null;
   stopEventListeners(mvuEventStops);
+  stopEventListeners(tavernEventStops);
   mvuEventsRegistered = false;
   cancelAnimationFrame(hostFrameRaf);
   hostFrameObserver?.disconnect();
@@ -260,6 +298,8 @@ const tabComponent = computed(() => {
       return ProtagonistPage;
     case 'inventory':
       return InventoryPage;
+    case 'kitchen':
+      return KitchenPage;
     case 'recipes':
       return RecipesPage;
     case 'characters':
@@ -295,6 +335,7 @@ const tabTitle = computed(
       regularGuests: '常客簿',
       protagonist: '主角档案',
       inventory: '行囊与库房',
+      kitchen: '厨房炉台',
       recipes: '配方簿',
       characters: '人物羁绊',
       gallery: '图册画廊',

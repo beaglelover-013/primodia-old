@@ -668,6 +668,7 @@ export type TabId =
   | 'regularGuests'
   | 'protagonist'
   | 'inventory'
+  | 'kitchen'
   | 'recipes'
   | 'characters'
   | 'gallery'
@@ -7859,7 +7860,17 @@ export const useGameStore = defineStore('primordia', () => {
     return actualText.replace(/\s+/g, ' ').includes(anchor);
   }
 
-  function pruneFloorSnapshots(snapshots: Record<string, PrimordiaSaveBody>, keep = 80) {
+  function floorSnapshotKeepLimit() {
+    const fallback = 30;
+    try {
+      const configured = Math.floor(Number(localStorage.getItem('primordia.floorSnapshotKeep') || fallback));
+      return Math.max(5, Math.min(80, Number.isFinite(configured) ? configured : fallback));
+    } catch {
+      return fallback;
+    }
+  }
+
+  function pruneFloorSnapshots(snapshots: Record<string, PrimordiaSaveBody>, keep = floorSnapshotKeepLimit()) {
     const entries = Object.entries(snapshots)
       .map(([messageId, snapshot]) => ({ messageId, numericId: Number(messageId), snapshot }))
       .sort((a, b) => {
