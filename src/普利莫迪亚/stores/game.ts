@@ -3581,7 +3581,7 @@ export const useGameStore = defineStore('primordia', () => {
   function currentSceneLabel() {
     sanitizeCurrentLocation();
     const region = location.region || '';
-    const place = protagonist.located || location.place || '';
+    const place = location.place || protagonist.located || '';
     if (region && place.startsWith(`${region} 路`)) return place;
     return [region, place].filter(Boolean).join(' · ') || '当前地点';
   }
@@ -3612,7 +3612,7 @@ export const useGameStore = defineStore('primordia', () => {
   }
 
   function currentPlaceText() {
-    return [location.region, protagonist.located, location.place].filter(Boolean).join(' ');
+    return [location.region, location.place, protagonist.located].filter(Boolean).join(' ');
   }
 
   function compactShopCompareText(value: string) {
@@ -3669,11 +3669,11 @@ export const useGameStore = defineStore('primordia', () => {
   function currentShopNameFromLocation() {
     const activeShopName = generatedShop.value?.name?.trim() ?? '';
     if (activeShopName && shopNameMatchesPlace(activeShopName)) return activeShopName;
-    const place = normalizeScenePlaceName(location.place || '');
-    const located = normalizeScenePlaceName(protagonist.located || '');
+    const place = normalizeScenePlaceName(location.place || protagonist.located || '');
+    const located = normalizeScenePlaceName(protagonist.located || location.place || '');
     if (activeShopName && (place === activeShopName || located === activeShopName)) return activeShopName;
     if (isGenericStreetEntrance(`${place} ${located}`)) return '';
-    return located || place;
+    return place || located;
   }
 
   function protagonistEnergyStateLabel() {
@@ -7639,7 +7639,7 @@ export const useGameStore = defineStore('primordia', () => {
         种族: protagonist.race,
         称号: protagonist.title,
         当前状态: protagonist.mood,
-        所在位置: protagonist.located || location.place,
+        所在位置: location.place,
         一句话穿着: protagonist.outfit,
         生命: { 当前值: protagonist.hp, 上限: protagonist.hpMax },
         精力: { 当前值: energy.value, 上限: energy.max },
@@ -9312,7 +9312,7 @@ export const useGameStore = defineStore('primordia', () => {
       tags: product.tags,
       desc: product.desc,
     }));
-    if (options.setLocation !== false && protagonist.located !== shop.name) protagonist.located = shop.name;
+    if (options.setLocation !== false) setCurrentPlace(shop.name, { keepShop: true });
     if (!options.silent) markLocalStateDirty();
     if (!options.silent) pushLog('叙事', `AI商铺已载入 · ${shop.name} · 货架 ${generatedShopProducts.value.length} 项`, {
       source: 'ai',
@@ -9327,10 +9327,9 @@ export const useGameStore = defineStore('primordia', () => {
     if (!data.世界 || typeof data.世界 !== 'object' || Array.isArray(data.世界)) data.世界 = {};
     const world = data.世界 as Record<string, any>;
     if (!world.当前地点 || typeof world.当前地点 !== 'object' || Array.isArray(world.当前地点)) {
-      world.当前地点 = { 区域: location.region || '', 具体位置: location.place || shop.name };
+      world.当前地点 = { 区域: location.region || '', 具体位置: shop.name };
     } else {
-      world.当前地点.区域 = world.当前地点.区域 || location.region || '';
-      world.当前地点.具体位置 = world.当前地点.具体位置 || location.place || '';
+      world.当前地点.具体位置 = shop.name;
     }
     if (!data.主角 || typeof data.主角 !== 'object' || Array.isArray(data.主角)) data.主角 = {};
     (data.主角 as Record<string, any>).所在位置 = shop.name;
@@ -10166,7 +10165,7 @@ export const useGameStore = defineStore('primordia', () => {
     return changed;
   }
 
-  function readMvuWorldPlaceText(data: PrimordiaStatData) {
+  function readMvuPlaceText(data: PrimordiaStatData) {
     const worldLocation = readFirstPath<any>(data, legacyPathAliases('世界.当前地点'), undefined);
     return String(
       readFirstPath(
@@ -10174,29 +10173,14 @@ export const useGameStore = defineStore('primordia', () => {
         [
           '世界.当前地点.具体位置',
           '世界.当前地点.地点',
+          '主角.所在位置',
           ...legacyPathAliases('世界.当前地点.具体位置'),
           ...legacyPathAliases('世界.当前地点.地点'),
+          ...legacyPathAliases('主角.所在位置'),
         ],
         typeof worldLocation === 'string' ? worldLocation : '',
       ) || '',
     ).trim();
-  }
-
-  function readMvuProtagonistPlaceText(data: PrimordiaStatData) {
-    return String(
-      readFirstPath(
-        data,
-        [
-          '主角.所在位置',
-          ...legacyPathAliases('主角.所在位置'),
-        ],
-        '',
-      ) || '',
-    ).trim();
-  }
-
-  function readMvuPlaceText(data: PrimordiaStatData) {
-    return readMvuProtagonistPlaceText(data) || readMvuWorldPlaceText(data);
   }
 
   function applySceneLocationOnlyFromMvu(data: PrimordiaStatData) {
@@ -10204,36 +10188,22 @@ export const useGameStore = defineStore('primordia', () => {
       readFirstPath(data, legacyPathAliases('世界.当前地点.区域'), '') || location.region || '',
     ).trim();
     const mvuCurrentShopName = readMvuActiveShopName(data);
-    const rawWorldPlace = readMvuWorldPlaceText(data);
-    const rawProtagonistPlace = readMvuProtagonistPlaceText(data);
-    const normalizedWorldPlace = normalizeScenePlaceName(rawWorldPlace);
-    const normalizedProtagonistPlace = normalizeScenePlaceName(rawProtagonistPlace);
+    const rawNextPlace = readMvuPlaceText(data);
+    const normalizedRawPlace = normalizeScenePlaceName(rawNextPlace);
     const shouldPreferShopName =
       mvuCurrentShopName &&
-      (!normalizedProtagonistPlace ||
-        isGenericStreetEntrance(normalizedProtagonistPlace) ||
-        variablePlaceMatchesShopName(mvuCurrentShopName, normalizedProtagonistPlace));
-    const nextLocated = shouldPreferShopName ? mvuCurrentShopName : (normalizedProtagonistPlace || normalizedWorldPlace);
-    let changed = false;
-    if (nextRegion && location.region !== nextRegion) {
-      location.region = nextRegion;
-      changed = true;
-    }
-    if (normalizedWorldPlace && location.place !== normalizedWorldPlace) {
-      location.place = normalizedWorldPlace;
-      changed = true;
-    }
-    if (!nextLocated) return changed;
+      (!normalizedRawPlace ||
+        isGenericStreetEntrance(normalizedRawPlace) ||
+        variablePlaceMatchesShopName(mvuCurrentShopName, normalizedRawPlace));
+    const nextPlace = shouldPreferShopName ? mvuCurrentShopName : rawNextPlace;
+    if (nextRegion) location.region = nextRegion;
+    if (!nextPlace) return false;
     const keepShop = Boolean(
       shouldPreferShopName ||
-      (mvuCurrentShopName && variablePlaceMatchesShopName(mvuCurrentShopName, nextLocated)) ||
-      (generatedShop.value && variablePlaceMatchesShopName(generatedShop.value.name, nextLocated)),
+      (mvuCurrentShopName && variablePlaceMatchesShopName(mvuCurrentShopName, nextPlace)) ||
+      (generatedShop.value && variablePlaceMatchesShopName(generatedShop.value.name, nextPlace)),
     );
-    if (protagonist.located !== nextLocated) {
-      protagonist.located = nextLocated;
-      changed = true;
-    }
-    sanitizeCurrentLocation();
+    const changed = setCurrentPlace(nextPlace, { region: nextRegion || undefined, keepShop });
     if (!keepShop) clearGeneratedShop({ silent: true });
     return changed;
   }
@@ -10369,9 +10339,9 @@ export const useGameStore = defineStore('primordia', () => {
       ? applyGeneratedShopFromMvuData(data, { silent: true, setLocation: false, shopName: mvuCurrentShopName })
       : false;
     if (mvuCurrentShopName && restoredShopFromMvu) {
-      if (!protagonist.located.includes(mvuCurrentShopName)) protagonist.located = mvuCurrentShopName;
+      if (!currentPlaceText().includes(mvuCurrentShopName)) setCurrentPlace(mvuCurrentShopName, { keepShop: true });
     } else if (activeVariableShopName && generatedShop.value && variablePlaceMatchesShopName(generatedShop.value.name, activeVariableShopName)) {
-      // The exact actionable location comes from 主角.所在位置; this branch only keeps the shelf active.
+      // The exact location still comes from 世界.当前地点.具体位置; this branch only keeps the shelf active.
     } else if (mvuCurrentShopName && generatedShop.value?.name !== mvuCurrentShopName) {
       const recoveredShop = findNearestShopBefore(undefined, mvuCurrentShopName);
       if (recoveredShop) applyGeneratedShop(recoveredShop, { silent: true });
@@ -10572,19 +10542,6 @@ export const useGameStore = defineStore('primordia', () => {
       });
     }
     return false;
-  }
-
-  async function writeFrontendSnapshotToCurrentMvu(reason = '手动写回前端规则状态') {
-    const nextData = buildFrontendMvuSnapshot(reason);
-    const wroteMessage = await writeCurrentMessageStatData(nextData);
-    await writeChatSave();
-    pushLog('系统', wroteMessage ? '已把当前前端规则状态写回当前楼层变量。' : '前端状态已保存，但当前楼层变量写回失败。', {
-      source: 'engine',
-      authoritative: true,
-      tone: wroteMessage ? 'cyan' : 'amber',
-      actionType: 'MVU_WRITEBACK',
-    });
-    return wroteMessage;
   }
 
   function needsReputationMvuShapeMigration(data: PrimordiaStatData) {
@@ -11689,7 +11646,6 @@ export const useGameStore = defineStore('primordia', () => {
     cleanupLegacyCharacterAlias,
     syncFrontendFromMessageMvu,
     reloadCurrentFloorMvu,
-    writeFrontendSnapshotToCurrentMvu,
     rerollTodayWeather,
     lifePhase,
     energyPhase,
