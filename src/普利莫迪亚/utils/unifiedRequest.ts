@@ -628,9 +628,8 @@ function messageHasScenePatch(message: string): boolean {
   const text = message || '';
   const hasReadableScenePatch = [
     /世界[^<>{}\x5b\x5d\n]{0,20}当前地点[^<>{}\x5b\x5d\n]{0,20}(?:具体位置|地点|区域)/,
-    /主角[^<>{}\x5b\x5d\n]{0,20}所在位置/,
   ].some(pattern => pattern.test(text));
-  return hasReadableScenePatch || hasLegacyCompatiblePathReference(text, ['世界.当前地点', '主角.所在位置']);
+  return hasReadableScenePatch || hasLegacyCompatiblePathReference(text, ['世界.当前地点']);
 }
 
 function messageHasTimePatch(message: string): boolean {
@@ -899,8 +898,6 @@ function mergeAuthoritativeData(
     (options.preserveNarrativeScene || options.preserveNarrativeTime) && target.世界 && typeof target.世界 === 'object'
       ? target.世界
       : undefined;
-  const targetProtagonist =
-    options.preserveNarrativeScene && target.主角 && typeof target.主角 === 'object' ? target.主角 : undefined;
   const targetStreetShop =
     options.preserveNarrativeScene && target.街坊商铺 && typeof target.街坊商铺 === 'object'
       ? target.街坊商铺
@@ -910,7 +907,6 @@ function mergeAuthoritativeData(
     targetWorld?.当前地点 && typeof targetWorld.当前地点 === 'object'
       ? `${targetWorld.当前地点.区域 ?? ''} ${targetWorld.当前地点.具体位置 ?? ''}`
       : '',
-    typeof targetProtagonist?.所在位置 === 'string' ? targetProtagonist.所在位置 : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -951,9 +947,6 @@ function mergeAuthoritativeData(
       if (Object.prototype.hasOwnProperty.call(generatedProtagonist, 'hp')) {
         next.主角.hp = cloneData(generatedProtagonist.hp);
       }
-    }
-    if (targetProtagonist && Object.prototype.hasOwnProperty.call(targetProtagonist, '所在位置')) {
-      next.主角.所在位置 = cloneData(targetProtagonist.所在位置);
     }
   }
   if (source.街坊商铺 && typeof source.街坊商铺 === 'object') {

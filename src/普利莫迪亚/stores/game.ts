@@ -4377,7 +4377,7 @@ export const useGameStore = defineStore('primordia', () => {
         : '',
       weatherLine,
       calendarEventLine,
-      `主角状态: ${protagonistStateSummary()}；当前状态「${protagonist.mood}」；所在位置「${protagonist.located}」；穿着「${protagonist.outfit}」。`,
+      `主角状态: ${protagonistStateSummary()}；当前状态「${protagonist.mood}」；穿着「${protagonist.outfit}」。`,
       relationLine ? `配角状态:\n${relationLine}` : '',
       formatTemporaryStatePromptBlock(),
       `资金: 随身钱袋 ${walletText.value}；钱匣 ${cashboxText.value}；合计 ${treasuryText.value}。外出采购、送礼、路上消费优先使用随身钱袋；酒馆收入进入钱匣；建设维护使用钱匣。余额不足就是余额不足，不要赊账或自动混用另一处资金。`,
@@ -4515,12 +4515,11 @@ export const useGameStore = defineStore('primordia', () => {
     businessVisitorPlan?: TavernBusinessVisitorPlan | null;
   }) {
     const rawUserText = options.userText.trim();
-    const userSceneLine = `当前地点: ${currentSceneLabel()}`;
     const structuredText = /<user>[\s\S]*?<\/user>/.test(rawUserText)
-      ? rawUserText.replace(/<user\b([^>]*)>/i, match => `${match}\n${userSceneLine}\n`)
+      ? rawUserText
       : /【前端权威事实】/.test(rawUserText)
         ? rawUserText
-        : `<user>${userSceneLine}\n${rawUserText}</user>`;
+        : `<user>${rawUserText}</user>`;
     const hasFrontendSettlement = /前端已结算/.test(rawUserText);
     const timeLine = options.settledFact && options.timeChange
       ? `时间变化: ${options.timeChange.from} -> ${options.timeChange.to}（推进${options.timeChange.minutes}分钟）`
@@ -7639,7 +7638,6 @@ export const useGameStore = defineStore('primordia', () => {
         种族: protagonist.race,
         称号: protagonist.title,
         当前状态: protagonist.mood,
-        所在位置: location.place,
         一句话穿着: protagonist.outfit,
         生命: { 当前值: protagonist.hp, 上限: protagonist.hpMax },
         精力: { 当前值: energy.value, 上限: energy.max },
@@ -8204,7 +8202,7 @@ export const useGameStore = defineStore('primordia', () => {
       readPlainPath(statData, '主角.种族'),
       readPlainPath(statData, '酒馆.所属领地') ?? readPlainPath(statData, '世界.地区'),
       readPlainPath(statData, '酒馆.所在城市') ?? readPlainPath(statData, '世界.当前地点.区域'),
-      readPlainPath(statData, '世界.当前地点.具体位置') ?? readPlainPath(statData, '主角.所在位置'),
+      readPlainPath(statData, '世界.当前地点.具体位置'),
       readPlainPath(statData, '世界.时代'),
     ]);
   }
@@ -8861,7 +8859,6 @@ export const useGameStore = defineStore('primordia', () => {
     setPlainPath(statData, '主角.种族', protagonistRace);
     setPlainPath(statData, '主角.称号', protagonistTitle);
     setPlainPath(statData, '主角.当前状态', '准备营业');
-    setPlainPath(statData, '主角.所在位置', tavernPlace);
     setPlainPath(statData, '主角.一句话穿着', draft.character.appearance.trim() || '衣着细节待叙事确认。');
     ensureOpeningTavernRegions(statData, draft, bundle);
     return statData;
@@ -9331,8 +9328,6 @@ export const useGameStore = defineStore('primordia', () => {
     } else {
       world.当前地点.具体位置 = shop.name;
     }
-    if (!data.主角 || typeof data.主角 !== 'object' || Array.isArray(data.主角)) data.主角 = {};
-    (data.主角 as Record<string, any>).所在位置 = shop.name;
   }
 
   function clearGeneratedShop(options: { silent?: boolean } = {}) {
@@ -9584,9 +9579,6 @@ export const useGameStore = defineStore('primordia', () => {
 
     const protagonistBio = String(readFirstPath(data, ['主角.备注', '主角.描述', '主角.bio'], '') || '').trim();
     protagonist.bio = protagonistBio;
-
-    const nextLocated = String(readFirstPath(data, ['主角.所在位置', '主角.位置', '主角.located'], '') || '').trim();
-    if (nextLocated) setCurrentPlace(nextLocated, { keepShop: isShopLikePlace(nextLocated) || shopNameMatchesPlace(nextLocated, currentPlaceText()) });
 
     const nextEnergyMax = readNumberPath(data, ['主角.精力.上限', '主角.精力.最大值', '主角.精力.max'], undefined);
     if (nextEnergyMax !== undefined) {
@@ -10173,10 +10165,8 @@ export const useGameStore = defineStore('primordia', () => {
         [
           '世界.当前地点.具体位置',
           '世界.当前地点.地点',
-          '主角.所在位置',
           ...legacyPathAliases('世界.当前地点.具体位置'),
           ...legacyPathAliases('世界.当前地点.地点'),
-          ...legacyPathAliases('主角.所在位置'),
         ],
         typeof worldLocation === 'string' ? worldLocation : '',
       ) || '',
@@ -10596,8 +10586,8 @@ export const useGameStore = defineStore('primordia', () => {
     const mismatches: string[] = [];
     const mvuEnergy = readNumberPath(data, ['主角.精力.当前值'], undefined);
     if (mvuEnergy !== undefined && Math.floor(mvuEnergy) !== Math.floor(energy.value)) mismatches.push(`主角精力 ${energy.value}/${mvuEnergy}`);
-    const mvuPlace = String(readFirstPath(data, ['主角.所在位置', '世界.当前地点.具体位置'], '') || '').trim();
-    if (mvuPlace && normalizeScenePlaceName(mvuPlace) !== normalizeScenePlaceName(location.place)) mismatches.push(`主角位置 ${location.place}/${mvuPlace}`);
+    const mvuPlace = String(readFirstPath(data, ['世界.当前地点.具体位置'], '') || '').trim();
+    if (mvuPlace && normalizeScenePlaceName(mvuPlace) !== normalizeScenePlaceName(location.place)) mismatches.push(`当前位置 ${location.place}/${mvuPlace}`);
     const mvuRegionNames = new Set(Object.keys(readRecordPath(data, ['酒馆.区域'])));
     const roomRoot = readRecordPath(data, ['酒馆.客房', '酒馆.房间']);
     if (Object.keys(roomRoot).length > 0) mvuRegionNames.add('客房');

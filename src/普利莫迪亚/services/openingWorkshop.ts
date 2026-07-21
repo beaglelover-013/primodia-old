@@ -1012,7 +1012,6 @@ function enforceOpeningDraftFacts(story: OpeningStoryDraft, draft: OpeningWorksh
   if (draft.tavern.status) setOpeningInitvarPath(initvar, '酒馆.今日营业状态', cleanText(draft.tavern.status));
   if (protagonistName) setOpeningInitvarPath(initvar, '主角.姓名', protagonistName);
   if (protagonistRace) setOpeningInitvarPath(initvar, '主角.种族', protagonistRace);
-  if (tavernPlace) setOpeningInitvarPath(initvar, '主角.所在位置', tavernPlace);
   if (draft.character.appearance) setOpeningInitvarPath(initvar, '主角.一句话穿着', cleanText(draft.character.appearance));
 }
 
@@ -1069,7 +1068,7 @@ const OPENING_INITVAR_SCHEMA_GUIDE = `正式 initvar 顶层必须包含：
   区域: 动态区域对象。新开局只写当前确定存在/可用的空间，默认包含：主厅接待区、柜台酒水区、厨房餐食区。客房写入下方独立的“客房”对象；前门、地窖、后院、马厩等未成立空间不要预设成区域。每个区域至少写 状态、状态原因、风格、描述、分配员工、设施。开局已有旧设施不要写零价格字段，只有新增/采购候选设施才写价格。
   客房: 客房对象。基础酒馆默认写三间普通客房，每间都包含 所属区域/类型/住客/清洁状态/清洁原因/舒适描述/私密描述/价格描述/设施
 主角:
-  姓名/种族/称号/当前状态/所在位置/一句话穿着
+  姓名/种族/称号/当前状态/一句话穿着
   生命/精力: 当前值/上限
   烹饪等级: 等级/称号/做菜次数/下级所需次数
 库房:
@@ -1690,7 +1689,6 @@ export function buildFixedOpeningPreset(worldbookName = '', keepInitvarForBranch
       种族: '人类',
       称号: '铁壶酒馆的少年老板',
       当前状态: '发呆中，被进门的应聘者打断',
-      所在位置: '主厅接待区',
       一句话穿着: '洗得发白的亚麻短袖衫、深棕色粗布短裤、旧围裙，赤脚。',
       生命: { 当前值: 100, 上限: 100 },
       精力: { 当前值: 100, 上限: 100 },
@@ -1820,7 +1818,6 @@ export function buildFixedOpeningPreset(worldbookName = '', keepInitvarForBranch
     },
   };
   initvar.主角.当前状态 = '刚醒，准备生火';
-  initvar.主角.所在位置 = '主厅接待区';
   initvar.主角.一句话穿着 = '洗得发白的亚麻短袖衫、深棕色粗布短裤和旧围裙，赤脚';
   initvar.主角.生命 = { 当前值: 100, 上限: 100 };
   initvar.主角.精力 = { 当前值: 80, 上限: 100 };
@@ -2042,7 +2039,6 @@ export function buildSoloCookOpeningPreset(worldbookName = ''): {
   initvar.酒馆.整体概况 =
     '铁壶酒馆冷清但可用。这个开局没有女主相遇，也没有陌生来访者登场；第一天从克斯独自醒来、生火、备菜、盘算靠做饭赚钱开始。';
   initvar.主角.当前状态 = '清晨刚醒，正在厨房生火备菜，目标是做饭赚钱';
-  initvar.主角.所在位置 = '厨房餐食区';
   initvar.世界.当前地点.具体位置 = '铁壶酒馆·厨房餐食区';
   initvar.库房.食材 = {
     ...initvar.库房.食材,
