@@ -23,7 +23,7 @@ const weatherTone = computed(() => {
   }
 });
 const placeText = computed(() => {
-  return game.location.place || '主厅';
+  return game.protagonist.located || game.location.place || '主厅';
 });
 const canRerollWeather = computed(() => game.weatherLibraryStats().currentMonthCount > 0);
 const activeTemporaryStates = computed(() => game.flattenTemporaryStates().slice(0, 4));
@@ -32,7 +32,10 @@ const calendarAnchor = ref<HTMLElement | null>(null);
 const isFocusMode = ref(false);
 const mvuReloading = ref(false);
 const mvuReloadNotice = ref('');
+const mvuWritebacking = ref(false);
+const mvuWritebackNotice = ref('');
 let mvuReloadNoticeTimer = 0;
+let mvuWritebackNoticeTimer = 0;
 
 function closeCalendar() {
   isCalendarOpen.value = false;
@@ -98,6 +101,25 @@ async function reloadCurrentFloorVariables() {
   }
 }
 
+async function writeCurrentFloorVariables() {
+  if (mvuWritebacking.value) return;
+  mvuWritebacking.value = true;
+  mvuWritebackNotice.value = '写入中';
+  window.clearTimeout(mvuWritebackNoticeTimer);
+  try {
+    const ok = await game.writeFrontendSnapshotToCurrentMvu();
+    mvuWritebackNotice.value = ok ? '已写回' : '写回失败';
+  } catch (error) {
+    console.warn('[primordia] 写回当前前端变量失败:', error);
+    mvuWritebackNotice.value = '写回失败';
+  } finally {
+    mvuWritebacking.value = false;
+    mvuWritebackNoticeTimer = window.setTimeout(() => {
+      mvuWritebackNotice.value = '';
+    }, 2600);
+  }
+}
+
 onMounted(() => {
   syncFocusMode();
   document.addEventListener('click', handleDocumentClick);
@@ -107,6 +129,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.clearTimeout(mvuReloadNoticeTimer);
+  window.clearTimeout(mvuWritebackNoticeTimer);
   document.removeEventListener('click', handleDocumentClick);
   document.removeEventListener('keydown', handleEscape);
   document.removeEventListener('fullscreenchange', handleFullscreenChange);
@@ -184,6 +207,16 @@ onUnmounted(() => {
       >
         <PmIcon name="refresh" :size="13" />
         <span>{{ mvuReloading ? '读取中' : '重读变量' }}</span>
+      </button>
+      <button
+        class="variable-writeback"
+        type="button"
+        :title="mvuWritebackNotice || '把当前前端规则状态写回当前楼层变量'"
+        :disabled="mvuWritebacking"
+        @click="writeCurrentFloorVariables"
+      >
+        <PmIcon name="ledger" :size="13" />
+        <span>{{ mvuWritebacking ? '写入中' : '写回变量' }}</span>
       </button>
       <button
         class="focus-toggle"
@@ -455,7 +488,8 @@ onUnmounted(() => {
   color: var(--pm-parch-soft);
   cursor: pointer;
 }
-.variable-reload {
+.variable-reload,
+.variable-writeback {
   min-height: 30px;
   flex: none;
   display: inline-flex;
@@ -471,11 +505,17 @@ onUnmounted(() => {
   font-size: calc(11px * var(--pm-text-scale));
   white-space: nowrap;
 }
-.variable-reload:hover:not(:disabled) {
+.variable-writeback {
+  color: var(--pm-parch-bright);
+  border-color: color-mix(in srgb, var(--pm-gold) 36%, transparent);
+}
+.variable-reload:hover:not(:disabled),
+.variable-writeback:hover:not(:disabled) {
   border-color: var(--pm-line-bright);
   background: rgba(201, 160, 74, 0.16);
 }
-.variable-reload:disabled {
+.variable-reload:disabled,
+.variable-writeback:disabled {
   cursor: wait;
   opacity: 0.58;
 }
@@ -628,10 +668,12 @@ onUnmounted(() => {
   .settings-toggle {
     display: none;
   }
-  .variable-reload span {
+  .variable-reload span,
+  .variable-writeback span {
     display: none;
   }
-  .variable-reload {
+  .variable-reload,
+  .variable-writeback {
     width: 30px;
     padding: 4px;
     justify-content: center;
