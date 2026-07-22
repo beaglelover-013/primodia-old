@@ -303,6 +303,8 @@ export interface DryingBatch {
   id: string;
   item: string;
   position: string;
+  weather: string;
+  packageItems: string;
   source: string;
   dirtyReason: string;
   startedDay?: number;
@@ -1323,6 +1325,21 @@ function readFirstPath<T = any>(source: any, paths: string[], fallback?: T): T {
 function readRecordPath(source: any, paths: string[]) {
   const value = readFirstPath<any>(source, paths, undefined);
   return asRecord(value);
+}
+
+function compactDisplayValue(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  if (Array.isArray(value)) return value.map(compactDisplayValue).filter(Boolean).join('、');
+  if (typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([key, entry]) => {
+        const text = compactDisplayValue(entry);
+        return text ? `${key} ${text}` : key;
+      })
+      .filter(Boolean)
+      .join('、');
+  }
+  return String(value).trim();
 }
 
 function readNumberPath(source: any, paths: string[], fallback?: number): number | undefined {
@@ -3434,7 +3451,13 @@ export const useGameStore = defineStore('primordia', () => {
     }, '');
   }
 
-  function appendDraft(line: string, options: { type?: DraftAction['type']; undoPatch?: DraftUndoPatch; stateDiscovery?: DraftAction['stateDiscovery'] } = {}) {
+  function appendDraft(line: string, options: {
+    type?: DraftAction['type'];
+    undoPatch?: DraftUndoPatch;
+    stateDiscovery?: DraftAction['stateDiscovery'];
+    aiHint?: string;
+    settledFact?: string;
+  } = {}) {
     if (!line.trim()) return;
     const type = options.type ?? 'TEXT';
     if (!options.undoPatch && type !== 'TEXT') {
@@ -3451,6 +3474,8 @@ export const useGameStore = defineStore('primordia', () => {
       type,
       undoPatch: options.undoPatch,
       stateDiscovery: options.stateDiscovery,
+      aiHint: options.aiHint,
+      settledFact: options.settledFact,
     });
   }
   function appendHiddenDraftRequirement(action: StoryActionInput) {
@@ -6775,6 +6800,11 @@ export const useGameStore = defineStore('primordia', () => {
     // it to the new user/assistant floors; writing here would mutate history.
     if (!narrative) return result;
     if (result.shouldAskAI === false) return result;
+    const resultHint = result.aiHint?.trim() === '无需生成正文。' && narrative.aiHint?.trim() ? '' : (result.aiHint?.trim() ?? '');
+    const narrativeHint = narrative.aiHint?.trim() ?? '';
+    const combinedAiHint =
+      [resultHint, narrativeHint].filter(Boolean).join('\n\n补充要求:\n') ||
+      '请承接上一楼层进行 AIRP 叙述。若行动自然影响状态，请通过 MVU/变量体现；地点变化只通过 MVU 地点补丁表达。';
     if (narrative.queueDraft) {
       const qty = Math.max(1, Math.floor(Number(action.type === 'INVENTORY_MOVE_TO_STORAGE' || action.type === 'INVENTORY_MOVE_TO_SATCHEL' ? action.qty : 1) || 1));
       const buyUndoPatch: DraftUndoPatch | undefined = action.type === 'BUY_ITEMS'
@@ -6797,6 +6827,8 @@ export const useGameStore = defineStore('primordia', () => {
         : undefined;
       appendDraft(result.narrativeFact ?? result.message, {
         type: action.type,
+        aiHint: combinedAiHint,
+        settledFact: result.settledFact,
         stateDiscovery:
           action.type === 'USE_ITEM' && action.target?.startsWith('酒馆区域：')
             ? (() => {
@@ -6841,12 +6873,6 @@ export const useGameStore = defineStore('primordia', () => {
       });
       return result;
     }
-
-    const resultHint = result.aiHint?.trim() === '无需生成正文。' && narrative.aiHint?.trim() ? '' : (result.aiHint?.trim() ?? '');
-    const narrativeHint = narrative.aiHint?.trim() ?? '';
-    const combinedAiHint =
-      [resultHint, narrativeHint].filter(Boolean).join('\n\n补充要求:\n') ||
-      '请承接上一楼层进行 AIRP 叙述。若行动自然影响状态，请通过 MVU/变量体现；地点变化只通过 MVU 地点补丁表达。';
 
     const isCustomNarrative = action.type === 'CUSTOM_ACTION';
     const narrativeOk = await runStoryAction({
@@ -10074,6 +10100,8 @@ export const useGameStore = defineStore('primordia', () => {
           id: key || `drying-${index + 1}`,
           item: String(readFirstPath(record, ['晾晒物品', '物品', 'item'], key) || key),
           position: String(readFirstPath(record, ['晾晒位置', '位置', 'position'], '') || ''),
+          weather: String(readFirstPath(record, ['天气', 'weather'], '') || ''),
+          packageItems: compactDisplayValue(readFirstPath(record, ['包舍物品', '包舍', '物品清单', 'items'], '')),
           source: String(readFirstPath(record, ['来源', 'source'], '') || ''),
           dirtyReason: String(readFirstPath(record, ['弄脏原因', 'dirtyReason'], '') || ''),
           startedDay: dayNumberFromValue(readFirstPath(record, ['晾晒开始日', '开始日', 'startedDay'], undefined), undefined),
@@ -11280,9 +11308,9 @@ export const useGameStore = defineStore('primordia', () => {
     const canContinue = await continueFromLoadedCheckpoint();
     if (!canContinue) return;
     const combined = [actionDraft.value.trim(), playerInput.value.trim()].filter(Boolean).join('\n—— 玩家旁白 ——\n');
-    const hiddenRequirements = draftActions.value.filter(action => action.hidden);
-    const hiddenAiHint = hiddenRequirements.map(action => action.aiHint?.trim()).filter(Boolean).join('\n\n');
-    const hiddenSettledFact = aggregateHiddenSettledFacts(hiddenRequirements);
+    const queuedRequirements = draftActions.value.filter(action => action.hidden || action.aiHint?.trim() || action.settledFact?.trim());
+    const hiddenAiHint = queuedRequirements.map(action => action.aiHint?.trim()).filter(Boolean).join('\n\n');
+    const hiddenSettledFact = aggregateHiddenSettledFacts(queuedRequirements);
     const isPrebuiltNarrationPrompt =
       /<玩家本回合行动>|【叙述者权限边界】|【当前权威局势】|【输出格式】/.test(combined) ||
       combined.includes('【系统已结算 / 权威局势】') ||
@@ -11312,7 +11340,7 @@ export const useGameStore = defineStore('primordia', () => {
           backgroundFlowPlan,
           businessVisitorPlan,
         });
-    const preserveQueuedSettlement = hiddenRequirements.some(action => action.settledFact);
+    const preserveQueuedSettlement = queuedRequirements.some(action => action.settledFact);
     const hasPendingFrontendSettlement = localStateDirty.value;
     await submitNarrationPrompt(scenePrompt, combined, {
       ...options,

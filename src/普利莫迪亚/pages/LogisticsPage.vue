@@ -138,9 +138,11 @@ function feedPriceText(item: InventoryItem) {
               <span class="drying-bar"><i :style="{ width: `${dryingProgress(batch.status)}%` }"></i></span>
               <div class="linen-meta">
                 <span v-if="batch.position">位置 {{ batch.position }}</span>
+                <span v-if="batch.weather">天气 {{ batch.weather }}</span>
                 <span v-if="batch.expectedDryDay">预计第 {{ batch.expectedDryDay }} 日</span>
                 <span v-if="batch.source">来源 {{ batch.source }}</span>
               </div>
+              <p v-if="batch.packageItems">包舍物品：{{ batch.packageItems }}</p>
               <p v-if="batch.dirtyReason || batch.note">{{ batch.dirtyReason || batch.note }}</p>
             </div>
           </div>

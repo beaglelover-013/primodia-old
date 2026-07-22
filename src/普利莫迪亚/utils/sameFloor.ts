@@ -203,6 +203,16 @@ function submitThroughNativeComposer(userText: string): boolean {
   return true;
 }
 
+async function waitForLastMessageAfter(baselineMessageId: number, timeoutMs = 2500): Promise<number | undefined> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const currentLastMessageId = typeof getLastMessageId === 'function' ? getLastMessageId() : undefined;
+    if (typeof currentLastMessageId === 'number' && currentLastMessageId > baselineMessageId) return currentLastMessageId;
+    await new Promise(resolve => window.setTimeout(resolve, 100));
+  }
+  return undefined;
+}
+
 function requestNativeRegeneration(): boolean {
   const parentDocument = getParentDocument();
   const regenerateButton = parentDocument?.querySelector<HTMLElement>('#option_regenerate');
@@ -308,7 +318,11 @@ export async function runNativeNarrativeTurn(
 
       void (async () => {
         if (createUserMessage) {
-          if (submitThroughNativeComposer(userText)) return;
+          if (submitThroughNativeComposer(userText)) {
+            const nativeUserMessageId = await waitForLastMessageAfter(baselineMessageId);
+            if (typeof nativeUserMessageId === 'number') return;
+            console.warn('[primordia] 原生输入框点击后没有创建用户楼层，回退到 createChatMessages + /trigger。');
+          }
           await createChatMessages(
             [
               {
