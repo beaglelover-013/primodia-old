@@ -9503,11 +9503,7 @@ export const useGameStore = defineStore('primordia', () => {
     const hasRoot = rawRoot && typeof rawRoot === 'object' && !Array.isArray(rawRoot);
     const root = hasRoot ? (rawRoot as Record<string, any>) : {};
     const rawCurrentShop = String(preferredCurrentShopName || root.当前商铺 || '').trim();
-    const placeText = readMvuPlaceText(data);
-    const shouldKeepCurrentShop =
-      Boolean(preferredCurrentShopName) ||
-      Boolean(rawCurrentShop && placeText && variablePlaceMatchesShopName(rawCurrentShop, placeText));
-    const currentShop = shouldKeepCurrentShop ? rawCurrentShop : '';
+    const currentShop = rawCurrentShop;
     const nextRoot = { 当前商铺: currentShop };
     if (!hasRoot) {
       if (!currentShop) return false;
@@ -9534,16 +9530,7 @@ export const useGameStore = defineStore('primordia', () => {
 
   function readMvuActiveShopName(data: PrimordiaStatData) {
     const currentShopName = readMvuCurrentShopName(data);
-    const variablePlaceText = readMvuPlaceText(data);
-    if (
-      currentShopName &&
-      (!variablePlaceText ||
-        isGenericStreetEntrance(variablePlaceText) ||
-        variablePlaceMatchesShopName(currentShopName, variablePlaceText))
-    ) {
-      return currentShopName;
-    }
-    return '';
+    return currentShopName;
   }
 
   function readGeneratedShopFromMvuData(data: PrimordiaStatData, preferredShopName = ''): ParsedShop | undefined {
