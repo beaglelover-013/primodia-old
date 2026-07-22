@@ -480,7 +480,6 @@ async function generateTodayWardrobeForSelected(reroll = false) {
     });
     const entry = await saveVisibleWardrobeOutfit(worldbookName, selected.value.name, outfit);
     wardrobeVisibleEntryLabel.value = describeWardrobeEntry(entry);
-    await game.setFrontendMvuValue(`人物羁绊.${selected.value.name}.一句话穿着`, outfit.summary);
     wardrobeNotice.value = `${reroll ? '已重抽' : '已生成'}今日穿搭：${outfit.summary}`;
     await refreshWorldbookEntries();
   } catch (error) {

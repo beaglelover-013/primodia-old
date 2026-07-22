@@ -1,6 +1,6 @@
 /**
  * 普利莫迪亚编年录主状态。
- * 前端负责读取酒馆变量、保存本局状态、结算硬规则，并把权威局势交给 AI 叙述。
+ * 前端负责读取酒馆变量与展示本地界面状态；变量权威只来自楼层变量和 AI 输出补丁。
  */
 import { defineStore } from 'pinia';
 import { computed, reactive, ref, watch } from 'vue';
@@ -2013,7 +2013,8 @@ export const useGameStore = defineStore('primordia', () => {
   }
 
   async function syncCurrentCalendarToMessageStatData(reason = '前端日历同步') {
-    const baseData = readMessageStatData() ?? buildFrontendMvuSnapshot(reason);
+    const baseData = readMessageStatData();
+    if (!baseData) return false;
     return await writeCurrentMessageStatData(statDataWithCurrentCalendar(baseData));
   }
 
@@ -2421,7 +2422,7 @@ export const useGameStore = defineStore('primordia', () => {
     const merged = [...existing, ...planEntries.filter(entry => !existing.some(item => item.heroineId === entry.heroineId))];
     if (!merged.length) return '';
     return [
-      '【配角后台动向｜前端权威】',
+      '【配角后台动向｜本地界面记录】',
       '以下是酒馆里与玩家行动同时发生的配角后台行为。它们不是玩家行动，也不是让你重新抽取行为的指令。',
       '叙述时请把它们当作当前事实：如果镜头、声音、地点或玩家关注与该角色有关，可以自然承接；如果无关，只作为背景存在，不要打断主要互动。',
       ...formatNpcActivityContextLines(merged),
@@ -4542,7 +4543,7 @@ export const useGameStore = defineStore('primordia', () => {
     const rawUserText = options.userText.trim();
     const structuredText = /<user>[\s\S]*?<\/user>/.test(rawUserText)
       ? rawUserText
-      : /【前端权威事实】/.test(rawUserText)
+      : /【本地界面记录】/.test(rawUserText)
         ? rawUserText
         : `<user>${rawUserText}</user>`;
     const hasFrontendSettlement = /前端已结算/.test(rawUserText);
@@ -6127,7 +6128,6 @@ export const useGameStore = defineStore('primordia', () => {
       });
       pushLog('结算', `生成结果已入酒窖桶 · ${result.barrelName || result.name}`);
       markLocalStateDirty();
-      void writeCurrentMessageStatData(buildFrontendMvuSnapshot(`制作结果已入酒窖桶：${result.barrelName || result.name}`));
       void writeChatSave();
       return true;
     }
@@ -6193,7 +6193,6 @@ export const useGameStore = defineStore('primordia', () => {
     pushLog('结算', `生成结果已入库 · ${result.name}`);
     if (savedRecipe) pushLog('系统', `配方已记录 · ${result.name}`, { source: 'engine', authoritative: true, tone: 'green' });
     markLocalStateDirty();
-    void writeCurrentMessageStatData(buildFrontendMvuSnapshot(`制作结果已入库：${result.name}`));
     void writeChatSave();
     return true;
   }
@@ -6327,7 +6326,6 @@ export const useGameStore = defineStore('primordia', () => {
     }
     pushLog('结算', `配方复刻 · ${recipe.name} ×${safeCopies}`, { source: 'engine', authoritative: true, tone: 'green' });
     markLocalStateDirty();
-    void writeCurrentMessageStatData(buildFrontendMvuSnapshot(`配方复刻完成：${recipe.name} ×${safeCopies}`));
     void writeChatSave();
     return { ok: true as const, message: '制作完成。', shortages: [] as ReturnType<typeof recipeShortages> };
   }
@@ -7427,7 +7425,6 @@ export const useGameStore = defineStore('primordia', () => {
     moneyAccountRef(account).value = Math.max(0, moneyAccountRef(account).value + delta);
     markLocalStateDirty();
     void writeChatSave();
-    void writeCurrentMessageStatData(buildFrontendMvuSnapshot(action.reason || '调试资金调整'));
     pushLog(delta >= 0 ? '奖励' : '扣减', `${action.reason} · ${moneyAccountLabel(account)} ${delta >= 0 ? '+' : '-'}${formatCopper(Math.abs(delta))}`);
     return {
       ok: true,
@@ -7448,7 +7445,6 @@ export const useGameStore = defineStore('primordia', () => {
     if (action.stat === 'reputation_delta') reputation.value = clampReputation(reputation.value + Math.floor(action.value ?? 0));
     markLocalStateDirty();
     void writeChatSave();
-    void writeCurrentMessageStatData(buildFrontendMvuSnapshot(action.reason || '调试状态调整'));
     pushLog('系统', action.reason);
     return {
       ok: true,
@@ -7786,54 +7782,11 @@ export const useGameStore = defineStore('primordia', () => {
 
   function getAuthoritativeMvuData(preferredMessageId?: number, fallbackSummary = ''): PrimordiaStatData {
     const statData = readMessageStatData(preferredMessageId);
-    return statData ? clonePlainData(statData) : buildFrontendMvuSnapshot(fallbackSummary);
+    return statData ? clonePlainData(statData) : {};
   }
 
   function buildAuthoritativeRequestData(text: string): PrimordiaStatData {
     return getAuthoritativeMvuData(undefined, text);
-  }
-
-  function preserveFrontendSettledResources(
-    target: PrimordiaStatData,
-    frontendSnapshot: PrimordiaStatData,
-    options: { preserveTime?: boolean } = {},
-  ): PrimordiaStatData {
-    const next = clonePlainData(target);
-    if (frontendSnapshot.酒馆 && typeof frontendSnapshot.酒馆 === 'object') {
-      next.酒馆 = {
-        ...(next.酒馆 && typeof next.酒馆 === 'object' ? next.酒馆 : {}),
-        ...(Object.prototype.hasOwnProperty.call(frontendSnapshot.酒馆, '资金')
-          ? { 资金: clonePlain(frontendSnapshot.酒馆.资金) }
-          : {}),
-        ...(Object.prototype.hasOwnProperty.call(frontendSnapshot.酒馆, '声望')
-          ? { 声望: clonePlain(frontendSnapshot.酒馆.声望) }
-          : {}),
-        ...(Object.prototype.hasOwnProperty.call(frontendSnapshot.酒馆, '声望值')
-          ? { 声望值: clonePlain(frontendSnapshot.酒馆.声望值) }
-          : {}),
-        ...(Object.prototype.hasOwnProperty.call(frontendSnapshot.酒馆, '声望名')
-          ? { 声望名: clonePlain(frontendSnapshot.酒馆.声望名) }
-          : {}),
-      };
-    }
-    if (frontendSnapshot.库房 && typeof frontendSnapshot.库房 === 'object') next.库房 = clonePlain(frontendSnapshot.库房);
-    if (frontendSnapshot.行囊 && typeof frontendSnapshot.行囊 === 'object') next.行囊 = clonePlain(frontendSnapshot.行囊);
-    if (frontendSnapshot.街坊商铺 && typeof frontendSnapshot.街坊商铺 === 'object') {
-      next.街坊商铺 = clonePlain(frontendSnapshot.街坊商铺);
-    }
-    if (
-      options.preserveTime &&
-      frontendSnapshot.世界 &&
-      typeof frontendSnapshot.世界 === 'object' &&
-      frontendSnapshot.世界.当前历法 &&
-      typeof frontendSnapshot.世界.当前历法 === 'object'
-    ) {
-      next.世界 = {
-        ...(next.世界 && typeof next.世界 === 'object' ? next.世界 : {}),
-        当前历法: clonePlain(frontendSnapshot.世界.当前历法),
-      };
-    }
-    return next;
   }
 
   function readStoredFloorSnapshots() {
@@ -8535,7 +8488,6 @@ export const useGameStore = defineStore('primordia', () => {
     if (removed) {
       markLocalStateDirty();
       void writeChatSave();
-      void writeCurrentMessageStatData(buildFrontendMvuSnapshot('丢弃待命名制作占位'));
       pushLog('结算', '已丢弃待命名制作占位。', {
         source: 'engine',
         authoritative: true,
@@ -9062,18 +9014,14 @@ export const useGameStore = defineStore('primordia', () => {
     const next = nextName.trim();
     if (!next) return false;
     tavernName.value = next;
-    const nextData = buildFrontendMvuSnapshot('手动修改酒馆招牌');
-    setPlainPath(nextData, '酒馆.名称', next);
-    applyMvuStatData(nextData, { restoreInventory: true });
-    const wroteMessage = await writeCurrentMessageStatData(nextData);
     await writeChatSave();
     pushLog('系统', `酒馆招牌已改为「${next}」。`, {
       source: 'engine',
       authoritative: true,
-      tone: wroteMessage ? 'cyan' : 'amber',
+      tone: 'cyan',
       actionType: 'TAVERN_RENAME',
     });
-    return wroteMessage;
+    return true;
   }
 
   function currentHostPersonaName() {
@@ -10410,30 +10358,6 @@ export const useGameStore = defineStore('primordia', () => {
     return false;
   }
 
-  async function setFrontendMvuValue(path: string, value: unknown) {
-    const normalizedPath = path
-      .replace(/^\/+/, '')
-      .replace(/\//g, '.')
-      .split('.')
-      .map(part => part.trim().replace(/^["']|["']$/g, ''))
-      .filter(Boolean)
-      .join('.');
-    if (!normalizedPath) return false;
-
-    const nextData = getAuthoritativeMvuData(undefined, '变量总览手动编辑');
-    setPlainPath(nextData, normalizedPath, value);
-    applyMvuStatData(nextData, { restoreInventory: true });
-    const wroteMessage = await writeCurrentMessageStatData(nextData);
-    await writeChatSave();
-    pushLog('系统', `变量已手动修改：${normalizedPath}`, {
-      source: 'engine',
-      authoritative: true,
-      tone: wroteMessage ? 'cyan' : 'amber',
-      actionType: 'VARIABLE_EDIT',
-    });
-    return wroteMessage;
-  }
-
   async function deleteHeroine(heroineId: string) {
     const heroine = heroines.value.find(item => item.id === heroineId);
     if (!heroine) return false;
@@ -10444,14 +10368,11 @@ export const useGameStore = defineStore('primordia', () => {
     delete temporaryStates.value.人物[heroine.name];
     if (selectedHeroineId.value === heroine.id) selectedHeroineId.value = heroines.value[0]?.id ?? null;
 
-    const nextData = buildFrontendMvuSnapshot(`手动删除配角：${heroine.name}`);
-    applyMvuStatData(nextData, { restoreInventory: true });
-    const wroteMessage = await writeCurrentMessageStatData(nextData);
     await writeChatSave();
     pushLog('系统', `已删除配角「${heroine.name}」。`, {
       source: 'engine',
       authoritative: true,
-      tone: wroteMessage ? 'cyan' : 'amber',
+      tone: 'cyan',
       actionType: 'CHARACTER_DELETE',
     });
     return true;
@@ -10991,15 +10912,10 @@ export const useGameStore = defineStore('primordia', () => {
     const wants = (name: CapturedFormatTarget) => target === 'all' || target === name;
     const completedTurn = successfulNarrationTurn.value + 1;
     const applied: string[] = [];
-    let wroteSnapshot = false;
 
     if (wants('shop') && latest.shop) {
       applyGeneratedShop(latest.shop);
-      const nextData = getAuthoritativeMvuData(latest.messageId, '手动刷新捕捉格式：商铺');
-      persistParsedShopIntoMvuData(nextData, latest.shop);
-      await writeCurrentMessageStatData(nextData, latest.messageId);
       applied.push(`商铺 ${latest.shop.name}`);
-      wroteSnapshot = true;
     }
 
     if (wants('craft') && latest.craftResult) {
@@ -11009,7 +10925,6 @@ export const useGameStore = defineStore('primordia', () => {
         applyCraftResult(latest.craftResult, { refreshExisting: hasExistingCraft })
       ) {
         applied.push(`制作 ${latest.craftResult.name}`);
-        wroteSnapshot = true;
       }
     }
 
@@ -11057,9 +10972,6 @@ export const useGameStore = defineStore('primordia', () => {
     }
 
     markLocalStateDirty();
-    if (!wroteSnapshot) {
-      await writeCurrentMessageStatData(buildFrontendMvuSnapshot(`手动刷新捕捉格式：${applied.join('、')}`), latest.messageId);
-    }
     await writeChatSave(latest);
     pushLog('系统', `已从最新正文刷新捕捉格式：${applied.join('、')}。`, {
       source: 'engine',
@@ -11113,7 +11025,6 @@ export const useGameStore = defineStore('primordia', () => {
     options: {
       reloadMvu?: boolean;
       applyInventoryFromMvu?: boolean;
-      useFrontendAuthority?: boolean;
       npcActivityPlan?: TavernNpcActivityPlan | null;
       backgroundFlowPlan?: BackgroundFlowPlan | null;
       businessVisitorPlan?: TavernBusinessVisitorPlan | null;
@@ -11145,9 +11056,7 @@ export const useGameStore = defineStore('primordia', () => {
       const promptWithOperations = operationsBlock ? `${scenePrompt}\n\n${operationsBlock}` : scenePrompt;
       const scenePromptForRequest = appendDuePromiseMemoBlock(promptWithOperations, duePromiseMemosForTurn);
       const temporaryStateKeysBeforeTurn = captureTemporaryStateKeys();
-      const authoritativeData = options.useFrontendAuthority
-        ? buildFrontendMvuSnapshot(combined)
-        : buildAuthoritativeRequestData(combined);
+      const authoritativeData = buildAuthoritativeRequestData(combined);
       const isPrebuiltNarrationPrompt = /<玩家本回合行动>|【叙述者权限边界】|【当前权威局势】|【输出格式】/.test(scenePromptForRequest);
       const prebuiltAllowsVariablePatch =
         isPrebuiltNarrationPrompt &&
@@ -11194,12 +11103,7 @@ export const useGameStore = defineStore('primordia', () => {
         }
         let finalMvuData = result.mvuData
           ? clonePlainData(result.mvuData)
-          : options.useFrontendAuthority
-            ? clonePlainData(authoritativeData)
-            : null;
-        if (finalMvuData && options.useFrontendAuthority) {
-          finalMvuData = preserveFrontendSettledResources(finalMvuData, authoritativeData);
-        }
+          : null;
         if (finalMvuData && result.latest?.shop) {
           persistParsedShopIntoMvuData(finalMvuData, result.latest.shop);
         }
@@ -11340,15 +11244,11 @@ export const useGameStore = defineStore('primordia', () => {
           backgroundFlowPlan,
           businessVisitorPlan,
         });
-    const preserveQueuedSettlement = queuedRequirements.some(action => action.settledFact);
-    const hasPendingFrontendSettlement = localStateDirty.value;
     await submitNarrationPrompt(scenePrompt, combined, {
       ...options,
-      ...(preserveQueuedSettlement
-        ? { reloadMvu: false, applyInventoryFromMvu: false, useFrontendAuthority: true }
-        : hasPendingFrontendSettlement
-          ? { useFrontendAuthority: true }
-          : {}),
+      ...(queuedRequirements.some(action => action.settledFact)
+        ? { reloadMvu: false, applyInventoryFromMvu: false }
+        : {}),
       npcActivityPlan,
       backgroundFlowPlan,
       businessVisitorPlan,
@@ -11444,7 +11344,6 @@ export const useGameStore = defineStore('primordia', () => {
       return submitNarrationPrompt(prompt, combinedFact, {
         reloadMvu: !preserveLocalState,
         applyInventoryFromMvu: !preserveLocalState,
-        useFrontendAuthority: preserveLocalState,
         npcActivityPlan,
         backgroundFlowPlan,
         businessVisitorPlan,
@@ -11673,7 +11572,6 @@ export const useGameStore = defineStore('primordia', () => {
     buildCurrentScenePrompt,
     buildFrontendMvuSnapshot,
     getAuthoritativeMvuData,
-    setFrontendMvuValue,
     setFrontendMvuData,
     cleanupLegacyCharacterAlias,
     syncFrontendFromMessageMvu,

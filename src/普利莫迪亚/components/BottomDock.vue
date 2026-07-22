@@ -94,7 +94,7 @@ function logSourceClass(log: EngineLog) {
 }
 
 function logTitle(log: EngineLog) {
-  return log.authoritative === false ? 'AI叙事: 只用于呈现，不作为规则存档。' : '前端权威记录: 由玩家提交或脚本结算。';
+  return log.authoritative === false ? 'AI叙事: 只用于呈现，不作为规则存档。' : '本地界面记录: 只用于本次界面流程，不自动覆盖楼层变量。';
 }
 </script>
 
