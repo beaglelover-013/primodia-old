@@ -189,6 +189,14 @@ export function readPrimordiaStatData(option: PlainRecord): PlainRecord | null {
   return readPrimordiaStatDataFromOptions([option]);
 }
 
+function sameJsonValue(left: unknown, right: unknown) {
+  try {
+    return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+  } catch {
+    return left === right;
+  }
+}
+
 function readExistingMvuEnvelope(option: PlainRecord): PlainRecord {
   if (typeof Mvu !== 'undefined' && typeof Mvu.getMvuData === 'function') {
     try {
@@ -256,5 +264,15 @@ export async function writePrimordiaStatData(statData: PlainRecord, option: Plai
   }
 
   if (!wrote && lastError) throw lastError;
-  return wrote;
+  if (!wrote) return false;
+
+  const readable = readPrimordiaStatData(option);
+  if (sameJsonValue(readable, nextStatData)) return true;
+
+  console.warn('[primordia] 变量接口未报错，但写后读回未匹配:', {
+    option,
+    expectedKeys: Object.keys(nextStatData),
+    readableKeys: readable ? Object.keys(readable) : [],
+  });
+  return false;
 }

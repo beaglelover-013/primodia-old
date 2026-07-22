@@ -488,9 +488,48 @@ function stripThinkingBlocks(content: string): string {
   return cleaned.trim();
 }
 
+function decodeHtmlEntities(content: string) {
+  return content
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&amp;/gi, '&');
+}
+
+function decodeEscapedStoryText(content: string) {
+  let decoded = content.trim();
+  const wrapped =
+    (decoded.startsWith('"') && decoded.endsWith('"')) || (decoded.startsWith("'") && decoded.endsWith("'"));
+  if (wrapped) decoded = decoded.slice(1, -1);
+  return decoded
+    .replace(/\\\\/g, '\\')
+    .replace(/\\r\\n|\\n|\\r/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\"/g, '"')
+    .replace(/\\'/g, "'");
+}
+
+function storyTextScanVariants(content: string) {
+  const variants: string[] = [];
+  const seen = new Set<string>();
+  const add = (value: string) => {
+    if (!value || seen.has(value)) return;
+    seen.add(value);
+    variants.push(value);
+  };
+
+  add(content);
+  add(decodeHtmlEntities(content));
+  add(decodeEscapedStoryText(content));
+  add(decodeEscapedStoryText(decodeHtmlEntities(content)));
+
+  return variants;
+}
+
 function extractLastTag(content: string, tagName: string): string {
   const regex = new RegExp(`<${tagName}\\b[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'gi');
-  const matches = [...content.matchAll(regex)];
+  const matches = storyTextScanVariants(content).flatMap(source => [...source.matchAll(regex)]);
   return matches.at(-1)?.[1]?.trim() ?? '';
 }
 
@@ -528,7 +567,11 @@ async function readBaseMvuData(): Promise<Record<string, any>> {
 }
 
 async function writeMessageStatData(statData: Record<string, any>, messageId?: number): Promise<boolean> {
-  const target = { type: 'message', message_id: typeof messageId === 'number' ? messageId : -1 };
+  if (typeof messageId !== 'number' || !Number.isFinite(messageId)) {
+    console.warn('[primordia] 拒绝写入变量：缺少明确的 assistant 楼层 ID。');
+    return false;
+  }
+  const target = { type: 'message', message_id: messageId };
   try {
     return await writePrimordiaStatData(cloneData(statData), target);
   } catch (error) {
@@ -1387,7 +1430,10 @@ export async function runUnifiedNarrativeRequest(
     latest.messageId = assistantId;
     if (typeof userMessageId === 'number') latest.userMessageId = userMessageId;
 
-    await writeMessageStatData(finalData, assistantId);
+    const wroteVariables = await writeMessageStatData(finalData, assistantId);
+    if (!wroteVariables) {
+      throw new Error(`AI 已生成楼层 #${assistantId}，但变量没有成功写回该楼层。`);
+    }
 
     emitStoryUpdated(latest);
     return {

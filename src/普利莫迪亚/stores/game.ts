@@ -11150,6 +11150,10 @@ export const useGameStore = defineStore('primordia', () => {
       });
 
       if (result.ok) {
+        const generatedMessageId = result.latest?.messageId;
+        if (typeof generatedMessageId !== 'number' || !Number.isFinite(generatedMessageId)) {
+          throw new Error('AI 已生成内容，但前端没有拿到明确的 assistant 楼层 ID，已停止变量写回。');
+        }
         let finalMvuData = result.mvuData
           ? clonePlainData(result.mvuData)
           : options.useFrontendAuthority
@@ -11173,7 +11177,7 @@ export const useGameStore = defineStore('primordia', () => {
           const temporaryStatesSynced = applyTemporaryStatesFromMvuData(finalMvuData);
           const temporaryStateRemovalsApplied = applyTemporaryStateRemovalsFromPatch(result.latest?.fullMessage);
           if (temporaryStateRemovalsApplied) finalMvuData = statDataWithCurrentTemporaryStates(finalMvuData);
-          await writeCurrentMessageStatData(finalMvuData, result.latest?.messageId);
+          await writeCurrentMessageStatData(finalMvuData, generatedMessageId);
           if (inventorySynced || satchelSynced) {
             pushLog('系统', `${inventorySynced && satchelSynced ? '库房与行囊' : inventorySynced ? '库房' : '行囊'}已按本回合变量/MVU结果同步。`, {
               source: 'ai',
@@ -11214,15 +11218,15 @@ export const useGameStore = defineStore('primordia', () => {
         markPromiseMemosTriggered(duePromiseMemoIds, completedTurn);
         const temporaryStatesTicked = decrementExistingTemporaryStates(temporaryStateKeysBeforeTurn);
         if (temporaryStatesTicked) {
-          const countdownBase = finalMvuData ?? getAuthoritativeMvuData(result.latest?.messageId, '本回合临时状态倒计时');
+          const countdownBase = finalMvuData ?? getAuthoritativeMvuData(generatedMessageId, '本回合临时状态倒计时');
           finalMvuData = statDataWithCurrentTemporaryStates(countdownBase);
-          await writeCurrentMessageStatData(finalMvuData, result.latest?.messageId);
+          await writeCurrentMessageStatData(finalMvuData, generatedMessageId);
           applyTemporaryStatesFromMvuData(finalMvuData);
         }
         if (result.latest?.tavernStateUpdates?.length && applyTavernStateUpdates(result.latest.tavernStateUpdates, stateDiscoveries, completedTurn)) {
-          const stateBase = finalMvuData ?? getAuthoritativeMvuData(result.latest?.messageId, '经营状态收录');
+          const stateBase = finalMvuData ?? getAuthoritativeMvuData(generatedMessageId, '经营状态收录');
           finalMvuData = statDataWithCurrentTemporaryStates(stateBase);
-          await writeCurrentMessageStatData(finalMvuData, result.latest?.messageId);
+          await writeCurrentMessageStatData(finalMvuData, generatedMessageId);
         }
         successfulNarrationTurn.value = completedTurn;
         clearActionDraft();
