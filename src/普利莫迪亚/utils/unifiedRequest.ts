@@ -594,6 +594,10 @@ function normalizeAssistantMessage(raw: string): {
   const promiseUpdate = extractLastTag(cleaned, 'promise_update');
   const characterBehaviorUpdate = extractLastTag(cleaned, 'character_behavior_update');
   const shop = extractLastTag(cleaned, 'shop');
+  const option = extractLastTag(cleaned, 'option');
+  const sum = extractLastTag(cleaned, 'sum');
+  const updateVariable = extractLastTag(cleaned, 'UpdateVariable');
+  const jsonPatch = extractEmbeddedJsonPatch(cleaned);
   let maintext = stripHiddenOutputTags(extractLastTag(cleaned, 'maintext') || extractLastTag(cleaned, 'NARRATIVE'));
   if (maintext && !hasRenderableStreamingText(maintext)) {
     maintext = '';
@@ -615,12 +619,10 @@ function normalizeAssistantMessage(raw: string): {
       maintext = '';
     }
   }
+  if (!maintext && (updateVariable || jsonPatch)) {
+    maintext = '变量记录已更新。';
+  }
   if (!maintext) throw new Error('生成内容缺少 <maintext> 正文。');
-
-  const option = extractLastTag(cleaned, 'option');
-  const sum = extractLastTag(cleaned, 'sum');
-  const updateVariable = extractLastTag(cleaned, 'UpdateVariable');
-  const jsonPatch = extractLastTag(cleaned, 'JSONPatch');
 
   let message = `<maintext>${maintext}</maintext>`;
   if (option) message += `\n\n<option>\n${option}\n</option>`;
@@ -1102,7 +1104,23 @@ function mirrorFarmBrewAliases(data: Record<string, any>) {
 }
 
 function extractEmbeddedJsonPatch(message: string): string {
-  return extractLastTag(message, 'JSONPatch') || extractLastTag(extractLastTag(message, 'UpdateVariable'), 'JSONPatch');
+  const directPatch = extractLastTag(message, 'JSONPatch');
+  if (directPatch) return directPatch;
+
+  const updateVariable = extractLastTag(message, 'UpdateVariable');
+  if (updateVariable) {
+    const nestedPatch = extractLastTag(updateVariable, 'JSONPatch');
+    if (nestedPatch) return nestedPatch;
+  }
+
+  for (const source of storyTextScanVariants(message).reverse()) {
+    const open = source.lastIndexOf('<JSONPatch>');
+    const close = source.lastIndexOf('</JSONPatch>');
+    if (open >= 0 && close > open) {
+      return source.slice(open + '<JSONPatch>'.length, close).trim();
+    }
+  }
+  return '';
 }
 
 function applyEmbeddedJsonPatch(message: string, baseData: Record<string, any>): Record<string, any> {
