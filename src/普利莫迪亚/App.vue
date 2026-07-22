@@ -326,15 +326,16 @@ const tabComponent = computed(() => {
 });
 
 const tabTitle = computed(
-  () =>
-    ({
+  () => {
+    const inventoryTitle = game.canUseStorageInventoryHere() ? '行囊与库房' : '个人行囊';
+    return ({
       opening: '开场选择',
       chronicle: '正文与行动',
       tavern: '酒馆总览',
       operations: '经营约定',
       regularGuests: '常客簿',
       protagonist: '主角档案',
-      inventory: '行囊与库房',
+      inventory: inventoryTitle,
       kitchen: '厨房炉台',
       recipes: '配方簿',
       characters: '人物羁绊',
@@ -346,7 +347,8 @@ const tabTitle = computed(
       logistics: '经营后勤',
       variables: '变量总览',
       settings: '系统与设置',
-    })[game.currentTab],
+    })[game.currentTab];
+  },
 );
 </script>
 

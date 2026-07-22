@@ -28,9 +28,9 @@ const navGroups: NavGroup[] = [
     id: 'chronicles',
     name: '编年录',
     icon: 'ledger',
-    sub: '正文 · 行动',
+    sub: '正文 · 约定',
     items: [
-      { id: 'chronicle', name: '正文与行动', icon: 'ledger', sub: '楼层 · 选择 · 约定', status: 'ready' },
+      { id: 'chronicle', name: '编年录', icon: 'ledger', sub: '正文 · 约定', status: 'ready' },
     ],
   },
   {
@@ -42,9 +42,8 @@ const navGroups: NavGroup[] = [
       { id: 'tavern', name: '酒馆总览', icon: 'tavern', sub: '营业 · 区域 · 房间', status: 'ready' },
       { id: 'ledger', name: '账单', icon: 'ledger', sub: '收支 · 资产 · 历史', status: 'ready' },
       { id: 'operations', name: '经营约定', icon: 'ledger', sub: '状态 · 维持 · 约定', status: 'ready' },
-      { id: 'regularGuests', name: '常客簿', icon: 'people', sub: '老面孔 · 团体 · 回访', status: 'ready' },
+      { id: 'farm', name: '农田与酒窖', icon: 'farm', sub: '种植 · 陈酿 · 收成', status: 'ready' },
       { id: 'logistics', name: '后勤与圈舍', icon: 'ledger', sub: '布草 · 厩舍 · 禽畜', status: 'ready' },
-      { id: 'shop', name: '街坊商铺', icon: 'coin', sub: '店铺 · 货架 · 购买', status: 'ready' },
     ],
   },
   {
@@ -56,7 +55,6 @@ const navGroups: NavGroup[] = [
       { id: 'inventory', name: '行囊与库房', icon: 'ledger', sub: '我有什么 · 怎么取用', status: 'ready' },
       { id: 'kitchen', name: '厨房炉台', icon: 'pot', sub: '做菜 · 调饮 · 上菜', status: 'ready' },
       { id: 'recipes', name: '配方簿', icon: 'ledger', sub: '复刻 · 记录 · 成品', status: 'ready' },
-      { id: 'farm', name: '农田与酒窖', icon: 'farm', sub: '种植 · 陈酿 · 收成', status: 'ready' },
     ],
   },
   {
@@ -67,6 +65,7 @@ const navGroups: NavGroup[] = [
     items: [
       { id: 'protagonist', name: '主角档案', icon: 'heart', sub: '状态 · 厨艺', status: 'ready' },
       { id: 'characters', name: '人物羁绊', icon: 'people', sub: '配角 · 羁绊', status: 'ready' },
+      { id: 'regularGuests', name: '常客簿', icon: 'people', sub: '老面孔 · 团体 · 回访', status: 'ready' },
     ],
   },
   {
@@ -76,6 +75,7 @@ const navGroups: NavGroup[] = [
     sub: '地图 · 图册',
     items: [
       { id: 'map', name: '大地图', icon: 'map', sub: '普利莫迪亚 · 节点', status: 'ready' },
+      { id: 'shop', name: '街坊商铺', icon: 'coin', sub: '店铺 · 货架 · 购买', status: 'ready' },
       { id: 'gallery', name: '图册画廊', icon: 'map', sub: 'CG · 图床 · 收藏', status: 'ready' },
     ],
   },
@@ -103,6 +103,11 @@ const tavernReputationCap = computed(() => {
   const stage = tavernReputationStage.value;
   return stage.index >= 5 ? `${stage.min}+` : String(stage.max);
 });
+const tavernReputationRange = computed(() => {
+  return game.reputationRange || '未记录';
+});
+const inventoryNavName = computed(() => (game.canUseStorageInventoryHere() ? '行囊与库房' : '个人行囊'));
+const inventoryNavSub = computed(() => (game.canUseStorageInventoryHere() ? '随身 · 库存 · 取用' : '随身携带 · 主角物品'));
 const tavernReputationProgress = computed(() => {
   const stage = tavernReputationStage.value;
   if (stage.index >= 5) return 100;
@@ -119,13 +124,21 @@ watch(
 
 function selectGroup(group: NavGroup) {
   activeGroupId.value = group.id;
-  if (group.items.length === 1 || window.matchMedia?.('(max-width: 760px)').matches) {
+  if (group.id === 'chronicles' || group.items.length === 1 || window.matchMedia?.('(max-width: 760px)').matches) {
     switchTab(group.items[0].id);
   }
 }
 
 function switchTab(id: TabId) {
   game.currentTab = id;
+}
+
+function navItemName(item: NavItem) {
+  return item.id === 'inventory' ? inventoryNavName.value : item.name;
+}
+
+function navItemSub(item: NavItem) {
+  return item.id === 'inventory' ? inventoryNavSub.value : item.sub;
 }
 
 function openMobilePromises() {
@@ -163,7 +176,7 @@ function openMobileSatchel() {
         <span class="nav-cursor"></span>
       </button>
 
-      <div class="sub-nav">
+      <div v-if="activeGroup.id !== 'chronicles'" class="sub-nav">
         <button
           v-for="item in activeGroup.items"
           :id="`nav-${item.id}`"
@@ -176,8 +189,8 @@ function openMobileSatchel() {
             <PmIcon :name="item.icon" :size="17" />
           </span>
           <span class="nav-text">
-            <span class="nav-name">{{ item.name }}</span>
-            <span class="nav-sub">{{ item.sub }}</span>
+            <span class="nav-name">{{ navItemName(item) }}</span>
+            <span class="nav-sub">{{ navItemSub(item) }}</span>
           </span>
           <span v-if="item.status === 'dev'" class="nav-badge dev">开发中</span>
           <span class="nav-cursor"></span>
@@ -207,7 +220,7 @@ function openMobileSatchel() {
         </div>
         <div class="tavern-status-row">
           <span>声望 {{ tavernReputationValue }} / {{ tavernReputationCap }}</span>
-          <span>售价 ×{{ tavernReputationStage.multiplier }}</span>
+          <span>范围 {{ tavernReputationRange }}</span>
         </div>
       </div>
       <div class="scroll-band">CHRONICLES</div>

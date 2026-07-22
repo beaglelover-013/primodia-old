@@ -582,6 +582,12 @@ watch(
   () => refreshTurnAction(),
   { immediate: true },
 );
+
+watch(
+  () => latestMessage.value.messageId,
+  messageId => game.setVisibleStoryMessageId(messageId ?? null),
+  { immediate: true },
+);
 </script>
 
 <template>

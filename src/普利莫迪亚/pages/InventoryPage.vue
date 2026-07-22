@@ -22,7 +22,13 @@ type MoveDirection = 'to_storage' | 'to_satchel';
 const activeMove = ref<{ itemId: string; direction: MoveDirection; qty: number } | null>(null);
 const activeUse = ref<{ itemId: string; source: InventorySource; target: string } | null>(null);
 const isSatchelView = computed(() => inventoryView.value === 'satchel');
-const canUseStorageHere = computed(() => ['酒馆', '库房炉台', '农田酒窖'].includes(game.currentSceneType));
+const canUseStorageHere = computed(() => game.canUseStorageInventoryHere());
+const inventoryPageTitle = computed(() => (canUseStorageHere.value ? '行囊与库房' : '个人行囊'));
+const inventoryPageSub = computed(() =>
+  canUseStorageHere.value
+    ? '行囊使用与入库 · 库房整理与取出 · 成品可在这里直接上菜'
+    : '随身物品查看与使用 · 库房需回到酒馆后整理取用',
+);
 const canUseActiveInventory = computed(() => isSatchelView.value || canUseStorageHere.value);
 const activeInventory = computed(() => (isSatchelView.value ? game.satchel : game.inventory));
 const visibleItems = computed(() => (currentCat.value === '全部' ? activeInventory.value : activeInventory.value.filter(i => i.category === currentCat.value)));
@@ -73,6 +79,13 @@ watch(
     if (!guests.some(group => group.id === selectedServeGuestId.value)) {
       selectedServeGuestId.value = guests[0]?.id ?? '';
     }
+  },
+  { immediate: true },
+);
+watch(
+  canUseStorageHere,
+  canUseStorage => {
+    if (!canUseStorage && inventoryView.value === 'storage') inventoryView.value = 'satchel';
   },
   { immediate: true },
 );
@@ -439,9 +452,9 @@ function qualityTone(q?: InventoryItem['quality']) {
       <div>
         <h2 class="h-title">
           <PmIcon name="ledger" :size="22" />
-          行囊与库房
+          {{ inventoryPageTitle }}
         </h2>
-        <div class="sub">行囊使用与入库 · 库房整理与取出 · 成品可在这里直接上菜</div>
+        <div class="sub">{{ inventoryPageSub }}</div>
       </div>
       <div class="head-actions">
         <button
@@ -464,7 +477,7 @@ function qualityTone(q?: InventoryItem['quality']) {
           <button class="mode-tab" :class="{ active: inventoryView === 'satchel' }" @click="inventoryView = 'satchel'">
             <PmIcon name="ledger" :size="13" /> 个人行囊
           </button>
-          <button class="mode-tab" :class="{ active: inventoryView === 'storage' }" @click="inventoryView = 'storage'">
+          <button v-if="canUseStorageHere" class="mode-tab" :class="{ active: inventoryView === 'storage' }" @click="inventoryView = 'storage'">
             <PmIcon name="pot" :size="13" /> 库房
           </button>
         </div>

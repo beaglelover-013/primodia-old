@@ -28,7 +28,24 @@ const selectedRegionTemporaryStates = computed<TemporaryStateDisplay[]>(() => {
   if (!regionName) return [];
   return game.flattenTemporaryStates().filter(state => state.targetType === '酒馆区域' && state.targetName === regionName);
 });
+const selectedRegionRooms = computed(() => selectedRegion.value?.rooms ?? []);
+const occupiedRoomCount = computed(() => selectedRegionRooms.value.filter(room => room.guest).length);
 const recentRumors = computed(() => game.rumorRecords.slice(0, 8));
+const latestRumor = computed(() => recentRumors.value[0]);
+const rumorStatusText = computed(() => {
+  const state = game.rumorDailyState;
+  if (latestRumor.value?.dateKey === state.dateKey) return '今日已记录';
+  if (state.pending && !state.used) return '今日已触发，等待客人口信';
+  if (state.rolled) return '今日未触发';
+  return '今日未判定';
+});
+const rumorStatusTone = computed(() => {
+  const state = game.rumorDailyState;
+  if (latestRumor.value?.dateKey === state.dateKey) return 'good';
+  if (state.pending && !state.used) return 'warn';
+  if (state.rolled) return 'dim';
+  return 'dim';
+});
 
 const addOpen = ref(false);
 const addTarget = ref<TavernRegion | null>(null);
@@ -97,10 +114,10 @@ async function runFastForward() {
     return;
   }
   game.appendDraft(
-    `我让「${game.tavernName}」开始营业，并连续经营约${hours}小时，营业风格偏「${intensity}」。观察客流、点单、收入、疲惫和酒馆里的气氛变化。（前端已结算：时间、钱匣收入、声望和精力变化。）`,
+    `我让「${game.tavernName}」连续经营约${hours}小时，营业风格偏「${intensity}」。观察客流、点单、收入、疲惫和酒馆里的气氛变化。`,
     { type: 'TAVERN_FAST_FORWARD' },
   );
-  game.pushLog('提示', `经营快进 · ${intensity} · ${hours}小时 已结算并加入行动框。`);
+  game.pushLog('提示', `经营快进 · ${intensity} · ${hours}小时 已加入行动框。`);
   fastForward.open = false;
 }
 function toggleBusinessOpen() {
@@ -115,11 +132,11 @@ function toggleBusinessOpen() {
   }
   game.appendDraft(
     open
-      ? `我打开「${game.tavernName}」开始营业，整理柜台、炉火和主厅，准备接待今天的第一批客人。（前端已结算：营业状态已开启。）`
-      : `我让「${game.tavernName}」歇业收店，收拾桌面、安顿店内事务并关上门。（前端已结算：营业状态已关闭，当前客流记录已清空。）`,
+      ? `我走到「${game.tavernName}」门口，把门口招牌翻到“营业”，推开门，让酒馆正式开始接待客人。`
+      : `我走到「${game.tavernName}」门口，把门口招牌翻到“歇业”，收住客流，让酒馆暂时不再接待新客。`,
     { type: 'BUSINESS_TOGGLE' },
   );
-  game.pushLog('提示', `${open ? '开始营业' : '歇业收店'} 已结算并加入行动框。`);
+  game.pushLog('提示', `${open ? '开始营业' : '歇业收店'} 已加入行动框。`);
 }
 function updateGuestCap(event: Event) {
   const value = Number((event.target as HTMLInputElement).value);
@@ -264,6 +281,24 @@ function assignWorkerToRegion(r: TavernRegion) {
           <div class="overview-kicker">当前酒馆概况</div>
           <p>{{ tavernOverviewText }}</p>
         </article>
+        <section class="rumor-board">
+          <div class="rg-fac-title rumor-head">
+            <span>近日听闻</span>
+            <span class="pm-tag" :class="rumorStatusTone">{{ rumorStatusText }}</span>
+          </div>
+          <div v-if="recentRumors.length" class="rumor-list">
+            <article v-for="rumor in recentRumors" :key="rumor.id" class="rumor-item">
+              <div class="rumor-meta">
+                <span class="pm-tag gold">{{ rumor.type }}</span>
+                <small>{{ rumor.date || rumor.dateKey }}</small>
+                <small>{{ rumor.source }}</small>
+              </div>
+              <p>{{ rumor.content }}</p>
+              <em v-if="rumor.place">{{ rumor.place }}</em>
+            </article>
+          </div>
+          <div v-else class="pm-empty compact">还没有记录到客人口信。触发后会在这里留下最近听闻。</div>
+        </section>
         <section v-if="tavernTemporaryStates.length" class="tavern-temp-board">
           <div class="overview-kicker">当前经营效果</div>
           <div class="temp-state-list">
@@ -337,24 +372,6 @@ function assignWorkerToRegion(r: TavernRegion) {
           <strong>{{ game.lastBackgroundFlow }}</strong>
         </section>
 
-        <section class="rumor-board">
-          <div class="rg-fac-title">
-            <span>近日听闻</span>
-          </div>
-          <div v-if="recentRumors.length" class="rumor-list">
-            <article v-for="rumor in recentRumors" :key="rumor.id" class="rumor-item">
-              <div class="rumor-meta">
-                <span class="pm-tag gold">{{ rumor.type }}</span>
-                <small>{{ rumor.date || rumor.dateKey }}</small>
-                <small>{{ rumor.source }}</small>
-              </div>
-              <p>{{ rumor.content }}</p>
-              <em v-if="rumor.place">{{ rumor.place }}</em>
-            </article>
-          </div>
-          <div v-else class="pm-empty compact">最近还没有客人口信。</div>
-        </section>
-
         <div class="rg-meta">
           <span v-if="selectedRegion.conditionReason" class="pm-tag warn">{{ selectedRegion.conditionReason }}</span>
           <span class="pm-tag">{{ selectedRegion.style }}</span>
@@ -420,9 +437,12 @@ function assignWorkerToRegion(r: TavernRegion) {
           </div>
         </section>
 
-        <section v-if="selectedRegion.rooms?.length" class="room-list">
-          <div class="rg-fac-title">独立房间</div>
-          <article v-for="room in selectedRegion.rooms" :key="room.id" class="room-card">
+        <section v-if="selectedRegionRooms.length" class="room-list">
+          <div class="rg-fac-title">
+            <span>独立房间</span>
+            <span class="pm-tag" :class="occupiedRoomCount ? 'gold' : 'dim'">入住 {{ occupiedRoomCount }}/{{ selectedRegionRooms.length }}</span>
+          </div>
+          <article v-for="room in selectedRegionRooms" :key="room.id" class="room-card" :class="{ occupied: room.guest }">
             <header class="room-head">
               <div>
                 <strong>{{ room.name }}</strong>
@@ -430,6 +450,10 @@ function assignWorkerToRegion(r: TavernRegion) {
               </div>
               <button class="pm-btn sm ghost" @click="openAddFacility(selectedRegion, room)">添置</button>
             </header>
+            <div class="room-guest" :class="{ empty: !room.guest }">
+              <span>住客</span>
+              <strong>{{ room.guest || '空房' }}</strong>
+            </div>
             <div v-if="room.cleanlinessText || room.cleanlinessReason || room.comfortText || room.privacyText" class="room-text-states">
               <div v-if="room.cleanlinessText || room.cleanlinessReason">
                 <span>清洁</span>
@@ -1090,6 +1114,12 @@ function assignWorkerToRegion(r: TavernRegion) {
   border-radius: 4px;
   background: rgba(255, 245, 215, 0.5);
 }
+.room-card.occupied {
+  border-color: rgba(185, 132, 42, 0.72);
+  background:
+    linear-gradient(90deg, rgba(221, 171, 64, 0.2), transparent 44%),
+    rgba(255, 245, 215, 0.56);
+}
 .room-head {
   display: flex;
   justify-content: space-between;
@@ -1107,6 +1137,34 @@ function assignWorkerToRegion(r: TavernRegion) {
 .room-stats {
   color: var(--pm-ink-dim);
   font-size: calc(11px * var(--pm-text-scale));
+}
+.room-guest {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid rgba(153, 104, 44, 0.32);
+  border-radius: 4px;
+  background: rgba(255, 252, 238, 0.46);
+}
+.room-guest span {
+  color: var(--pm-gold-dim);
+  font-size: calc(10.5px * var(--pm-text-scale));
+  font-weight: 800;
+}
+.room-guest strong {
+  color: var(--pm-ink);
+  font-size: calc(12px * var(--pm-text-scale));
+  font-weight: 800;
+}
+.room-guest.empty {
+  opacity: 0.72;
+  background: rgba(255, 255, 255, 0.22);
+}
+.room-guest.empty strong {
+  color: var(--pm-ink-dim);
+  font-weight: 500;
 }
 .room-stats,
 .room-facs {

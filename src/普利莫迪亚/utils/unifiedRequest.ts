@@ -48,6 +48,21 @@ export interface UnifiedRequestResult {
   hasVariablePatch?: boolean;
 }
 
+async function deleteGeneratedTurnMessages(messageIds: Array<number | undefined>, baselineMessageId: number) {
+  if (typeof deleteChatMessages !== 'function') return false;
+  const ids = [...new Set(messageIds)]
+    .filter((id): id is number => typeof id === 'number' && Number.isFinite(id) && id > baselineMessageId)
+    .sort((a, b) => a - b);
+  if (!ids.length) return false;
+  try {
+    await deleteChatMessages(ids, { refresh: 'none' });
+    return true;
+  } catch (error) {
+    console.warn('[primordia] 清理失败生成楼层失败:', error);
+    return false;
+  }
+}
+
 export interface PromptPreflightResult {
   ok: boolean;
   error?: string;
@@ -1247,6 +1262,9 @@ export async function runUnifiedNarrativeRequest(
   if (!prompt) return { ok: false, error: '没有可发送的行动内容。' };
 
   let uninjectScanPrompts: (() => void) | undefined;
+  const baselineMessageId = typeof getLastMessageId === 'function' ? getLastMessageId() : -1;
+  let generatedUserMessageId: number | undefined;
+  let generatedAssistantMessageId: number | undefined;
 
   try {
     const baseData = await readBaseMvuData();
@@ -1342,6 +1360,8 @@ export async function runUnifiedNarrativeRequest(
         emitStoryStreaming(maintext);
       },
     });
+    generatedUserMessageId = nativeTurn.userMessageId;
+    generatedAssistantMessageId = nativeTurn.assistantMessage.message_id;
     const generatedText = nativeTurn.assistantMessage.message?.trim() || nativeTurn.streamedText.trim();
     if (!generatedText) {
       const nativeSummary = summarizeNativeAssistantTurn(nativeTurn);
@@ -1467,6 +1487,7 @@ export async function runUnifiedNarrativeRequest(
       hasVariablePatch: messageHasVariablePatch(mvuMessage),
     };
   } catch (error) {
+    const cleaned = await deleteGeneratedTurnMessages([generatedAssistantMessageId, generatedUserMessageId], baselineMessageId);
     rememberPromptDebug({
       id: `prompt-error-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       createdAt: new Date().toLocaleString(),
@@ -1474,9 +1495,12 @@ export async function runUnifiedNarrativeRequest(
       userInput: prompt,
       baseDataSummary: 'Request failed before the debug snapshot was finalized.',
       injects: [],
-      error: error instanceof Error ? error.message : '生成失败。',
+      error: `${error instanceof Error ? error.message : '生成失败。'}${cleaned ? ' 已删除本次失败生成的新楼层。' : ''}`,
     });
-    return { ok: false, error: error instanceof Error ? error.message : '生成失败。' };
+    return {
+      ok: false,
+      error: `${error instanceof Error ? error.message : '生成失败。'}${cleaned ? ' 已删除本次失败生成的新楼层。' : ''}`,
+    };
   } finally {
     uninjectScanPrompts?.();
   }

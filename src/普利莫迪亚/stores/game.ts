@@ -3078,6 +3078,7 @@ export const useGameStore = defineStore('primordia', () => {
   /* 声望与精力 */
   const REPUTATION_MAX = 9999;
   const reputation = ref(0);
+  const reputationRange = ref('');
   const energy = reactive({ value: 78, max: 100 });
   const reputationSaleStages = [
     { index: 1, min: 0, max: 200, label: '无人知晓', multiplier: 1.1 },
@@ -3125,6 +3126,14 @@ export const useGameStore = defineStore('primordia', () => {
     const scoreAlias = readNumberPath(data, ['酒馆.声望值', '酒馆.声望数值', '酒馆.reputation'], undefined);
     if (scoreAlias !== undefined) return clampReputation(scoreAlias);
     return reputationValueFromStageName(readFirstPath(data, ['酒馆.声望名', '酒馆.声望名称'], ''));
+  }
+  function readReputationRangeFromMvuData(data: PrimordiaStatData) {
+    const raw = readFirstPath<any>(data, legacyPathAliases('酒馆.声望'), undefined);
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      const text = String(readFirstPath(raw, ['范围', 'range'], '') || '').trim();
+      if (text) return text;
+    }
+    return String(readFirstPath(data, ['酒馆.声望范围', '酒馆.声望.range'], '') || '').trim();
   }
   const reputationSaleStage = computed(() => {
     return reputationStageForValue(reputation.value);
@@ -3419,6 +3428,7 @@ export const useGameStore = defineStore('primordia', () => {
   const isGenerating = ref(false);
   const localStateDirty = ref(false);
   const loadedStoryCheckpoint = ref<StoryIndexItem | null>(null);
+  const visibleStoryMessageId = ref<number | null>(null);
   const storyContinuityOverride = ref<StoryIndexItem | null>(null);
   const saveMigrationStatus = ref('当前主存档已按最新结构读取。');
 
@@ -9702,6 +9712,7 @@ export const useGameStore = defineStore('primordia', () => {
 
     const nextReputation = readReputationFromMvuData(data);
     if (nextReputation !== undefined) reputation.value = nextReputation;
+    reputationRange.value = readReputationRangeFromMvuData(data);
 
     const nextName = String(readFirstPath(data, ['主角.姓名', '主角.name'], '') || '').trim();
     if (nextName && !/^<.*>$/.test(nextName)) protagonist.name = nextName;
@@ -10627,12 +10638,19 @@ export const useGameStore = defineStore('primordia', () => {
       if (!ids.includes(value)) ids.push(value);
     };
     pushId(preferredMessageId);
+    if (typeof preferredMessageId === 'number') return ids;
+    pushId(visibleStoryMessageId.value ?? undefined);
+    if (visibleStoryMessageId.value !== null) return ids;
     pushId(loadedStoryCheckpoint.value?.messageId);
     pushId(typeof getCurrentMessageId === 'function' ? getCurrentMessageId() : undefined);
     pushId(typeof getChatMessages === 'function' ? getChatMessages(-1, { role: 'assistant' })?.at(-1)?.message_id : undefined);
     pushId(typeof getLastMessageId === 'function' ? getLastMessageId() : undefined);
     pushId(-1);
     return ids;
+  }
+
+  function setVisibleStoryMessageId(messageId?: number | null) {
+    visibleStoryMessageId.value = typeof messageId === 'number' && Number.isFinite(messageId) ? messageId : null;
   }
 
   function reloadCurrentFloorMvu(options: { messageId?: number; silent?: boolean } = {}) {
@@ -11555,6 +11573,7 @@ export const useGameStore = defineStore('primordia', () => {
     treasuryParts,
     treasuryText,
     reputation,
+    reputationRange,
     reputationSaleStage,
     salePriceForItem,
     salePriceForPortion,
@@ -11578,6 +11597,7 @@ export const useGameStore = defineStore('primordia', () => {
     regularGuests,
     pendingRegularGuestUpdates,
     rumorRecords,
+    rumorDailyState,
     regularGuestBookWorldbookBinding,
     regularGuestBookWorldbookStatus,
     inventory,
@@ -11637,6 +11657,7 @@ export const useGameStore = defineStore('primordia', () => {
     playerInput,
     isGenerating,
     loadedStoryCheckpoint,
+    visibleStoryMessageId,
     saveMigrationStatus,
     currentTab,
     selectedHeroineId,
@@ -11648,6 +11669,7 @@ export const useGameStore = defineStore('primordia', () => {
     clearDraftActions,
     currentSceneLabel,
     currentSceneType,
+    canUseStorageInventoryHere,
     currentCalendarDay,
     resolveTavernNpcRegion,
     npcActivitiesForRegion,
@@ -11697,6 +11719,7 @@ export const useGameStore = defineStore('primordia', () => {
     removeLogs,
     markLocalStateDirty,
     setLoadedStoryCheckpoint,
+    setVisibleStoryMessageId,
     continueFromLoadedCheckpoint,
     spendCopper,
     earnCopper,

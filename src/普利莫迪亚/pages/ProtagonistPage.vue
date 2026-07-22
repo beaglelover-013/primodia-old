@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { useGameStore } from '../stores/game';
+import { useGameStore, type InventoryItem } from '../stores/game';
 import PmIcon from '../components/PmIcon.vue';
 
 const game = useGameStore();
@@ -16,9 +16,21 @@ const cookingProgressText = computed(() => {
 const energyValue = computed(() => Math.max(0, Math.floor(Number(game.energy.value) || 0)));
 const energyMax = computed(() => Math.max(1, Math.floor(Number(game.energy.max) || 100)));
 const energyPercent = computed(() => `${Math.max(0, Math.min(100, (energyValue.value / energyMax.value) * 100))}%`);
+const satchelItems = computed(() => game.satchel.filter(item => item.qty > 0));
+const satchelItemKinds = computed(() => satchelItems.value.length);
+const satchelItemCount = computed(() => satchelItems.value.reduce((total, item) => total + Math.max(0, item.qty), 0));
+const satchelPreviewItems = computed(() => satchelItems.value.slice(0, 6));
 const protagonistTemporaryStates = computed(() =>
   game.flattenTemporaryStates().filter(state => state.targetType === '主角'),
 );
+
+function stockUnit(item: InventoryItem) {
+  return game.inventoryStockUnitForItem(item);
+}
+
+function openSatchel() {
+  game.currentTab = 'inventory';
+}
 
 function trainCooking() {
   game.appendDraft('我在炉台旁练习基础火候、刀工和手感，想把厨艺磨得更稳一些。');
@@ -87,6 +99,32 @@ function trainCooking() {
             <PmIcon name="fire" :size="13" /> 练习
           </button>
         </article>
+      </section>
+
+      <section class="satchel-card">
+        <header class="satchel-head">
+          <div>
+            <h3><PmIcon name="ledger" :size="16" /> 随身行囊</h3>
+            <p>主角当前随身携带的物品。</p>
+          </div>
+          <span>{{ satchelItemKinds }} 种 · {{ satchelItemCount }} 件</span>
+        </header>
+
+        <div v-if="satchelPreviewItems.length" class="satchel-list">
+          <button v-for="item in satchelPreviewItems" :key="item.id" type="button" @click="openSatchel">
+            <strong>{{ item.name }}</strong>
+            <span>×{{ item.qty }}{{ stockUnit(item) }}</span>
+          </button>
+        </div>
+        <div v-else class="pm-empty compact">行囊里暂时没有物品。</div>
+
+        <footer class="satchel-foot">
+          <small v-if="satchelItemKinds > satchelPreviewItems.length">还有 {{ satchelItemKinds - satchelPreviewItems.length }} 种未展开。</small>
+          <small v-else>行囊只负责显示和取用，不迁移变量。</small>
+          <button class="pm-btn sm ghost" type="button" @click="openSatchel">
+            <PmIcon name="ledger" :size="12" /> 打开行囊
+          </button>
+        </footer>
       </section>
     </div>
   </section>
@@ -193,10 +231,82 @@ function trainCooking() {
   font-style: normal;
   font-size: calc(12px * var(--pm-text-scale));
 }
+.satchel-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(110, 80, 34, 0.38);
+  border-radius: 4px;
+  background: linear-gradient(180deg, rgba(255, 245, 215, 0.72), rgba(212, 186, 136, 0.46));
+}
+.satchel-head,
+.satchel-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.satchel-head h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--pm-ink);
+  font-family: var(--pm-font-display);
+  font-size: calc(15px * var(--pm-text-scale));
+}
+.satchel-head p,
+.satchel-foot small {
+  margin: 3px 0 0;
+  color: var(--pm-ink-dim);
+  font-size: calc(12px * var(--pm-text-scale));
+}
+.satchel-head > span {
+  color: var(--pm-gold-dim);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.satchel-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+.satchel-list button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid rgba(110, 80, 34, 0.34);
+  border-radius: 4px;
+  background: rgba(255, 249, 229, 0.58);
+  color: var(--pm-ink);
+  text-align: left;
+}
+.satchel-list button:hover {
+  border-color: rgba(167, 121, 45, 0.82);
+  background: rgba(255, 247, 222, 0.86);
+}
+.satchel-list strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.satchel-list span {
+  color: var(--pm-ink-dim);
+  font-size: calc(12px * var(--pm-text-scale));
+  font-weight: 700;
+  white-space: nowrap;
+}
 @media (max-width: 860px) {
   .hero-card,
-  .stat-grid {
+  .stat-grid,
+  .satchel-head,
+  .satchel-foot {
     grid-template-columns: 1fr;
+    align-items: stretch;
   }
 }
 </style>

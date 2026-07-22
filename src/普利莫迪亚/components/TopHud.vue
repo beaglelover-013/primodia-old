@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useGameStore } from '../stores/game';
+import BusinessSignIcon from './BusinessSignIcon.vue';
 import CalendarPopover from './CalendarPopover.vue';
 import PmIcon from './PmIcon.vue';
 
@@ -98,6 +99,25 @@ async function reloadCurrentFloorVariables() {
   }
 }
 
+function toggleBusinessOpen() {
+  const open = !game.isBusinessOpen;
+  const result = game.dispatchAction({
+    type: 'BUSINESS_TOGGLE',
+    open,
+  });
+  if (!result.ok) {
+    game.pushLog('提示', result.message);
+    return;
+  }
+  game.appendDraft(
+    open
+      ? `我走到「${game.tavernName}」门口，把门口招牌翻到“营业”，推开门，让酒馆正式开始接待客人。`
+      : `我走到「${game.tavernName}」门口，把门口招牌翻到“歇业”，收住客流，让酒馆暂时不再接待新客。`,
+    { type: 'BUSINESS_TOGGLE' },
+  );
+  game.pushLog('提示', `${open ? '开始营业' : '歇业收店'} 已加入行动框。`);
+}
+
 onMounted(() => {
   syncFocusMode();
   document.addEventListener('click', handleDocumentClick);
@@ -144,6 +164,17 @@ onUnmounted(() => {
 
     <!-- 中: 天气 + 位置 -->
     <div class="hud-center">
+      <button
+        class="business-sign-button"
+        :class="{ open: game.isBusinessOpen }"
+        type="button"
+        :disabled="game.isGenerating"
+        :title="game.isBusinessOpen ? '把门牌翻到歇业' : '把门牌翻到营业'"
+        @click="toggleBusinessOpen"
+      >
+        <BusinessSignIcon :open="game.isBusinessOpen" :size="42" />
+        <span>{{ game.isBusinessOpen ? '营业中' : '已歇业' }}</span>
+      </button>
       <div class="hud-pill weather" :style="{ color: weatherTone }" :title="game.calendar.weatherDescription || game.calendar.weather">
         <PmIcon :name="game.calendar.weatherIcon" :size="16" />
         <span>{{ game.calendar.weather }}</span>
@@ -375,6 +406,48 @@ onUnmounted(() => {
   gap: 10px;
   justify-content: center;
   flex-wrap: wrap;
+}
+.business-sign-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 3px 13px 3px 6px;
+  border: 1px solid color-mix(in srgb, var(--pm-gold-bright) 58%, transparent);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 26% 12%, rgba(255, 232, 150, 0.25), transparent 34%),
+    linear-gradient(180deg, rgba(80, 52, 24, 0.92), rgba(23, 14, 8, 0.94));
+  color: var(--pm-gold-bright);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 235, 177, 0.24),
+    0 8px 22px -12px rgba(0, 0, 0, 0.82),
+    0 0 16px rgba(210, 158, 67, 0.12);
+  cursor: pointer;
+  font-family: var(--pm-font-display);
+  font-size: calc(12px * var(--pm-text-scale));
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+.business-sign-button.open {
+  border-color: color-mix(in srgb, var(--pm-gold-bright) 82%, transparent);
+  background:
+    radial-gradient(circle at 26% 12%, rgba(255, 238, 160, 0.34), transparent 34%),
+    linear-gradient(180deg, rgba(111, 74, 28, 0.96), rgba(32, 18, 8, 0.96));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 240, 190, 0.32),
+    0 8px 24px -12px rgba(0, 0, 0, 0.86),
+    0 0 20px rgba(221, 174, 78, 0.2);
+}
+.business-sign-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: var(--pm-gold-bright);
+}
+.business-sign-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
 }
 .hud-pill {
   display: inline-flex;
@@ -646,6 +719,14 @@ onUnmounted(() => {
     overflow-x: auto;
     gap: 6px;
     padding-bottom: 0;
+  }
+  .business-sign-button {
+    min-height: 36px;
+    padding: 2px 9px 2px 4px;
+    font-size: calc(10px * var(--pm-text-scale));
+  }
+  .business-sign-button :deep(.business-sign-icon) {
+    --sign-height: 34px;
   }
   .brand-emblem {
     width: 30px;
