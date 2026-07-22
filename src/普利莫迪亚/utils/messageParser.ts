@@ -12,6 +12,7 @@ export interface StoryMessagePayload {
   guestUpdates?: ParsedGuestUpdate[];
   regularGuestUpdates?: ParsedRegularGuestUpdate[];
   promiseUpdates?: ParsedPromiseUpdate[];
+  rumorRecords?: ParsedRumorRecord[];
   tavernStateUpdates?: ParsedTavernStateUpdate[];
   businessAgreementUpdates?: ParsedBusinessAgreementUpdate[];
   characterBehaviorUpdates?: ParsedCharacterBehaviorUpdate[];
@@ -65,6 +66,16 @@ export interface ParsedGuestUpdate {
   status: GuestUpdateStatus;
   order: string;
   note: string;
+}
+
+export type RumorType = '商机' | '来访' | '隐患' | '奇闻' | '人情' | '秘会';
+
+export interface ParsedRumorRecord {
+  source: string;
+  type: RumorType;
+  content: string;
+  place: string;
+  date: string;
 }
 
 export type RegularGuestUpdateAction = 'add' | 'update' | 'remove';
@@ -149,6 +160,7 @@ const HIDDEN_STORY_TAGS = [
   'craft_result',
   'guest_update',
   'regular_guest_update',
+  'rumor_record',
   'promise_update',
   'tavern_state_update',
   'business_agreement_update',
@@ -370,6 +382,7 @@ function parseStoryMessage(
     craftResult: parseCraftResult(parsedContent),
     guestUpdates: parseGuestUpdates(parsedContent),
     regularGuestUpdates: parseRegularGuestUpdates(parsedContent),
+    rumorRecords: parseRumorRecords(parsedContent),
     promiseUpdates: parsePromiseUpdates(parsedContent),
     tavernStateUpdates: parseTavernStateUpdates(parsedContent),
     businessAgreementUpdates: parseBusinessAgreementUpdates(parsedContent),
@@ -952,6 +965,46 @@ export function parseGuestUpdates(messageContent: string): ParsedGuestUpdate[] {
     return entries
       .map((entry, index) => normalizeGuestUpdate(entry, index))
       .filter((entry): entry is ParsedGuestUpdate => Boolean(entry));
+  } catch {
+    return [];
+  }
+}
+
+function normalizeRumorType(raw: string): RumorType {
+  const value = raw.trim();
+  if (value === '商机' || value === '来访' || value === '隐患' || value === '奇闻' || value === '人情' || value === '秘会') return value;
+  if (/business|trade|market|price|stock|商|货|价|采购|食材|酒水/i.test(value)) return '商机';
+  if (/visit|arrival|guest|来访|到访|贵客|商队|官员/i.test(value)) return '来访';
+  if (/risk|trouble|hidden|隐患|风险|治安|税|纠纷|流言|竞争/i.test(value)) return '隐患';
+  if (/private|secret|meeting|秘会|私会|幽会|密谈|隐蔽/i.test(value)) return '秘会';
+  if (/favor|relationship|人情|带信|托人|熟人/i.test(value)) return '人情';
+  return '奇闻';
+}
+
+function normalizeRumorRecord(value: unknown): ParsedRumorRecord | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const content = readJsonFirstString(record, ['content', '内容', '听闻', '传闻', 'rumor']);
+  if (!content) return undefined;
+  return {
+    source: readJsonFirstString(record, ['source', '来源', '说话人', 'speaker']) || '未记名来客',
+    type: normalizeRumorType(readJsonFirstString(record, ['type', '类型', 'category']) || '奇闻'),
+    content,
+    place: readJsonFirstString(record, ['place', '地点', 'location']) || '',
+    date: readJsonFirstString(record, ['date', '日期', 'time']) || '',
+  };
+}
+
+export function parseRumorRecords(messageContent: string): ParsedRumorRecord[] {
+  const rumorText = extractLastTag(stripThinkingBlocks(messageContent), 'rumor_record');
+  if (!rumorText) return [];
+
+  try {
+    const parsed = parseLooseJson(cleanJsonLikeText(rumorText));
+    const entries = Array.isArray(parsed) ? parsed : [parsed];
+    return entries
+      .map(entry => normalizeRumorRecord(entry))
+      .filter((entry): entry is ParsedRumorRecord => Boolean(entry));
   } catch {
     return [];
   }

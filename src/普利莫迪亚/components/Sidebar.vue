@@ -28,22 +28,35 @@ const navGroups: NavGroup[] = [
     id: 'chronicles',
     name: '编年录',
     icon: 'ledger',
-    sub: '正文 · 约定',
+    sub: '正文 · 行动',
     items: [
-      { id: 'chronicle', name: '编年录', icon: 'ledger', sub: '正文 · 选择', status: 'ready' },
+      { id: 'chronicle', name: '正文与行动', icon: 'ledger', sub: '楼层 · 选择 · 约定', status: 'ready' },
     ],
   },
   {
     id: 'tavern',
-    name: '酒馆经营',
+    name: '经营',
     icon: 'tavern',
-    sub: '区域 · 商铺 · 账单',
+    sub: '酒馆 · 客流',
     items: [
-      { id: 'tavern', name: '酒馆', icon: 'tavern', sub: '主厅 · 房间 · 经营', status: 'ready' },
-      { id: 'operations', name: '经营附录', icon: 'ledger', sub: '状态 · 维持 · 约定', status: 'ready' },
+      { id: 'tavern', name: '酒馆总览', icon: 'tavern', sub: '营业 · 区域 · 房间', status: 'ready' },
+      { id: 'ledger', name: '账单', icon: 'ledger', sub: '收支 · 资产 · 历史', status: 'ready' },
+      { id: 'operations', name: '经营约定', icon: 'ledger', sub: '状态 · 维持 · 约定', status: 'ready' },
       { id: 'regularGuests', name: '常客簿', icon: 'people', sub: '老面孔 · 团体 · 回访', status: 'ready' },
+      { id: 'logistics', name: '后勤与圈舍', icon: 'ledger', sub: '布草 · 厩舍 · 禽畜', status: 'ready' },
       { id: 'shop', name: '街坊商铺', icon: 'coin', sub: '店铺 · 货架 · 购买', status: 'ready' },
-      { id: 'ledger', name: '账单', icon: 'ledger', sub: '历史足迹 · 资产', status: 'ready' },
+    ],
+  },
+  {
+    id: 'craft',
+    name: '物资',
+    icon: 'pot',
+    sub: '库存 · 制作',
+    items: [
+      { id: 'inventory', name: '行囊与库房', icon: 'ledger', sub: '我有什么 · 怎么取用', status: 'ready' },
+      { id: 'kitchen', name: '厨房炉台', icon: 'pot', sub: '做菜 · 调饮 · 上菜', status: 'ready' },
+      { id: 'recipes', name: '配方簿', icon: 'ledger', sub: '复刻 · 记录 · 成品', status: 'ready' },
+      { id: 'farm', name: '农田与酒窖', icon: 'farm', sub: '种植 · 陈酿 · 收成', status: 'ready' },
     ],
   },
   {
@@ -57,28 +70,23 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    id: 'craft',
-    name: '物资工坊',
-    icon: 'pot',
-    sub: '行囊 · 配方 · 农酿',
-    items: [
-      { id: 'inventory', name: '行囊与库房', icon: 'ledger', sub: '使用 · 入库 · 取出', status: 'ready' },
-      { id: 'kitchen', name: '厨房炉台', icon: 'pot', sub: '做菜 · 调饮 · 上菜', status: 'ready' },
-      { id: 'recipes', name: '配方簿', icon: 'ledger', sub: '复刻 · 记录', status: 'ready' },
-      { id: 'farm', name: '农田与酒窖', icon: 'farm', sub: '种植 · 陈酿', status: 'ready' },
-      { id: 'logistics', name: '后勤与圈舍', icon: 'ledger', sub: '布草 · 厩舍 · 禽畜', status: 'ready' },
-    ],
-  },
-  {
     id: 'world',
-    name: '世界与资料',
+    name: '世界',
     icon: 'map',
-    sub: '地图 · 图册 · 后台',
+    sub: '地图 · 图册',
     items: [
       { id: 'map', name: '大地图', icon: 'map', sub: '普利莫迪亚 · 节点', status: 'ready' },
       { id: 'gallery', name: '图册画廊', icon: 'map', sub: 'CG · 图床 · 收藏', status: 'ready' },
-      { id: 'variables', name: '变量总览', icon: 'ledger', sub: '正式变量 · 检查', status: 'ready', quiet: true },
-      { id: 'settings', name: '系统与设置', icon: 'gear', sub: '字体 · 存档 · 健康', status: 'ready', quiet: true },
+    ],
+  },
+  {
+    id: 'system',
+    name: '系统',
+    icon: 'gear',
+    sub: '变量 · 设置',
+    items: [
+      { id: 'variables', name: '变量总览', icon: 'ledger', sub: '正式变量 · 检查', status: 'ready' },
+      { id: 'settings', name: '系统与设置', icon: 'gear', sub: '字体 · 存档 · 健康', status: 'ready' },
     ],
   },
 ];
@@ -161,7 +169,7 @@ function openMobileSatchel() {
           :id="`nav-${item.id}`"
           :key="item.id"
           class="nav-item sub-item"
-          :class="{ active: game.currentTab === item.id, quiet: item.quiet, 'desktop-settings': item.id === 'settings' }"
+          :class="{ active: game.currentTab === item.id, quiet: item.quiet }"
           @click="switchTab(item.id)"
         >
           <span class="nav-icon">
@@ -425,12 +433,6 @@ function openMobileSatchel() {
   display: none;
 }
 
-@media (min-width: 761px) {
-  .sub-item.desktop-settings {
-    display: none;
-  }
-}
-
 @media (max-width: 980px) {
   .sidebar {
     flex-direction: row;
@@ -491,7 +493,7 @@ function openMobileSatchel() {
   .nav {
     width: 100%;
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     grid-template-rows: 44px 34px;
     gap: 4px;
     padding: 5px 7px 6px;

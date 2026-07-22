@@ -329,9 +329,9 @@ const tabTitle = computed(
   () =>
     ({
       opening: '开场选择',
-      chronicle: '编年录 · 正文',
-      tavern: '酒馆 · 八区域',
-      operations: '经营附录',
+      chronicle: '正文与行动',
+      tavern: '酒馆总览',
+      operations: '经营约定',
       regularGuests: '常客簿',
       protagonist: '主角档案',
       inventory: '行囊与库房',
@@ -343,7 +343,7 @@ const tabTitle = computed(
       shop: '街坊商铺',
       ledger: '账单',
       farm: '农田与酒窖',
-      logistics: '后勤与圈舍',
+      logistics: '经营后勤',
       variables: '变量总览',
       settings: '系统与设置',
     })[game.currentTab],

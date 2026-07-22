@@ -105,9 +105,11 @@ import {
   type ParsedGuestUpdate,
   type ParsedPromiseUpdate,
   type ParsedRegularGuestUpdate,
+  type ParsedRumorRecord,
   type ParsedShop,
   type ParsedTavernStateUpdate,
   type LatestMaintextPayload,
+  type RumorType,
   type StoryIndexItem,
 } from '../utils/messageParser';
 
@@ -118,6 +120,7 @@ export type CapturedFormatTarget =
   | 'craft'
   | 'guest'
   | 'regularGuest'
+  | 'rumor'
   | 'promise'
   | 'tavernState'
   | 'businessAgreement'
@@ -1072,6 +1075,20 @@ interface TavernBusinessVisitorPlan {
   regularGuest: RegularGuestUnit | null;
   shouldInject: boolean;
   reason: 'closed' | 'hit' | 'miss' | 'regular';
+  rumorPending: boolean;
+}
+
+export interface RumorRecord extends ParsedRumorRecord {
+  id: string;
+  dateKey: string;
+  createdAtTurn: number;
+}
+
+interface RumorDailyState {
+  dateKey: string;
+  rolled: boolean;
+  pending: boolean;
+  used: boolean;
 }
 
 interface BackgroundOrder {
@@ -1162,6 +1179,8 @@ interface PrimordiaSaveBody {
   tavernMaintenance?: TavernMaintenanceEntry[];
   businessAgreements?: BusinessAgreement[];
   businessSettlementRecords?: BusinessSettlementRecord[];
+  rumorRecords?: RumorRecord[];
+  rumorDailyState?: RumorDailyState;
   engineLogs: EngineLog[];
   generatedShop: StreetShop | null;
   generatedShopProducts: ShopProduct[];
@@ -1222,6 +1241,8 @@ interface LocalSettlementSnapshot {
   tavernMaintenance: TavernMaintenanceEntry[];
   businessAgreements: BusinessAgreement[];
   businessSettlementRecords: BusinessSettlementRecord[];
+  rumorRecords: RumorRecord[];
+  rumorDailyState: RumorDailyState;
   generatedShop: StreetShop | null;
   generatedShopProducts: ShopProduct[];
   farmPlots: FarmPlot[];
@@ -3281,6 +3302,8 @@ export const useGameStore = defineStore('primordia', () => {
   const guestGroups = ref<GuestGroup[]>([]);
   const regularGuests = ref<RegularGuestUnit[]>([]);
   const pendingRegularGuestUpdates = ref<RegularGuestUnit[]>([]);
+  const rumorRecords = ref<RumorRecord[]>([]);
+  const rumorDailyState = ref<RumorDailyState>({ dateKey: '', rolled: false, pending: false, used: false });
   const regularGuestBookWorldbookBinding = ref<WorldbookEntryRef | null>(null);
   const regularGuestBookWorldbookStatus = ref('常客簿世界书副本尚未同步。');
 
@@ -3901,6 +3924,132 @@ export const useGameStore = defineStore('primordia', () => {
     return true;
   }
 
+  const RUMOR_DAILY_CHANCE = 0.1;
+  const MAX_RUMOR_RECORDS = 8;
+  const rumorTypeLabels: RumorType[] = ['商机', '来访', '隐患', '奇闻', '人情', '秘会'];
+
+  function currentRumorDateKey() {
+    return `${calendar.year}-${calendar.monthIndex}-${calendar.day}`;
+  }
+
+  function ensureRumorDailyState() {
+    const dateKey = currentRumorDateKey();
+    if (rumorDailyState.value.dateKey !== dateKey) {
+      rumorDailyState.value = { dateKey, rolled: false, pending: false, used: false };
+    }
+    return rumorDailyState.value;
+  }
+
+  function rollDailyVisitorRumor() {
+    const state = ensureRumorDailyState();
+    if (!state.rolled) {
+      state.rolled = true;
+      state.pending = Math.random() < RUMOR_DAILY_CHANCE;
+      state.used = false;
+      void writeChatSave();
+    }
+    return state.pending && !state.used;
+  }
+
+  function formatVisitorRumorPrompt() {
+    return [
+      '【客人口信】',
+      '今天这位进店或路过酒馆的人需要自然带出一条“客人口信”。请根据当前地点、酒馆状态、库存、季节、客流和最近正文，从以下类型中选择最合适的一类：',
+      rumorTypeLabels.map(type => `- ${type}`).join('\n'),
+      '类型说明：商机=价格、缺货、采购、食材或酒水需求；来访=贵客、商队、官员、熟人或麻烦人物可能出现；隐患=治安、税务、纠纷、流言、竞争或供应问题；奇闻=怪事、地方传说、异常目击或氛围消息；人情=带信、托人、关系、熟人难处或小请求；秘会=需要安静隐蔽场所的私下见面、秘密谈话、暧昧幽会或不便公开的安排，表达含蓄，不写露骨内容。',
+      '要求：不要写成任务板，不要出现接取/完成/奖励结算等系统词；玩家可以无视，只有玩家主动追问、准备、采购或安排，才继续推进。',
+      '请在正文后追加隐藏记录块，供前端“近日听闻”回看，不写入变量：',
+      '<rumor_record>',
+      '{ "source": "说出这条口信的人", "type": "商机/来访/隐患/奇闻/人情/秘会", "content": "一句可被玩家利用但不强制推进的听闻", "place": "当前酒馆或地点", "date": "当前游戏日期" }',
+      '</rumor_record>',
+    ].join('\n');
+  }
+
+  function markVisitorRumorUsed() {
+    const state = ensureRumorDailyState();
+    if (!state.pending || state.used) return false;
+    state.used = true;
+    state.pending = false;
+    markLocalStateDirty();
+    void writeChatSave();
+    return true;
+  }
+
+  function rumorRecordKey(record: Pick<RumorRecord, 'dateKey' | 'source' | 'type' | 'content' | 'place'>) {
+    return [record.dateKey, record.source, record.type, record.content, record.place].map(value => String(value || '').trim()).join('|');
+  }
+
+  function addRumorRecords(records: ParsedRumorRecord[] | undefined, turn = successfulNarrationTurn.value) {
+    if (!records?.length) return false;
+    const dateKey = currentRumorDateKey();
+    const existing = new Set(rumorRecords.value.map(record => rumorRecordKey(record)));
+    let changed = false;
+    for (const record of records) {
+      const content = String(record.content || '').trim();
+      if (!content) continue;
+      const next: RumorRecord = {
+        id: `rumor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        dateKey,
+        date: record.date || dateText.value,
+        source: record.source || '未记名来客',
+        type: record.type,
+        content,
+        place: record.place || currentSceneLabel(),
+        createdAtTurn: turn,
+      };
+      const key = rumorRecordKey(next);
+      if (existing.has(key)) continue;
+      existing.add(key);
+      rumorRecords.value.unshift(next);
+      changed = true;
+    }
+    if (!changed) return false;
+    rumorRecords.value = rumorRecords.value.slice(0, MAX_RUMOR_RECORDS);
+    markVisitorRumorUsed();
+    markLocalStateDirty();
+    void writeChatSave();
+    return true;
+  }
+
+  function normalizeRumorRecords(source: unknown): RumorRecord[] {
+    if (!Array.isArray(source)) return [];
+    return source
+      .map((record, index) => {
+        if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
+        const raw = record as Partial<RumorRecord>;
+        const content = String(raw.content || '').trim();
+        if (!content) return null;
+        const type = rumorTypeLabels.includes(raw.type as RumorType) ? (raw.type as RumorType) : '奇闻';
+        return {
+          id: String(raw.id || `rumor-restored-${index}`),
+          dateKey: String(raw.dateKey || currentRumorDateKey()),
+          date: String(raw.date || ''),
+          source: String(raw.source || '未记名来客'),
+          type,
+          content,
+          place: String(raw.place || ''),
+          createdAtTurn: Math.max(0, Math.floor(Number(raw.createdAtTurn) || 0)),
+        } satisfies RumorRecord;
+      })
+      .filter((record): record is RumorRecord => Boolean(record))
+      .slice(0, MAX_RUMOR_RECORDS);
+  }
+
+  function normalizeRumorDailyState(source: unknown): RumorDailyState {
+    if (!source || typeof source !== 'object' || Array.isArray(source)) {
+      return { dateKey: currentRumorDateKey(), rolled: false, pending: false, used: false };
+    }
+    const raw = source as Partial<RumorDailyState>;
+    const dateKey = String(raw.dateKey || currentRumorDateKey());
+    if (dateKey !== currentRumorDateKey()) return { dateKey: currentRumorDateKey(), rolled: false, pending: false, used: false };
+    return {
+      dateKey,
+      rolled: Boolean(raw.rolled),
+      pending: Boolean(raw.pending) && !raw.used,
+      used: Boolean(raw.used),
+    };
+  }
+
   function pickRegularGuestForRevisit() {
     const list = regularGuests.value.filter(guest => guest.name.trim());
     if (!list.length) return null;
@@ -3926,11 +4075,14 @@ export const useGameStore = defineStore('primordia', () => {
     ].join('\n');
   }
 
-  function prepareBusinessVisitorPlan(): TavernBusinessVisitorPlan | null {
+  function prepareBusinessVisitorPlan(options: { rollRumor?: boolean } = {}): TavernBusinessVisitorPlan | null {
     if (!isBusinessOpen.value) return null;
+    const rumorPending = options.rollRumor === false
+      ? rumorDailyState.value.dateKey === currentRumorDateKey() && rumorDailyState.value.pending && !rumorDailyState.value.used
+      : rollDailyVisitorRumor();
     const chance = Math.max(0, Math.min(100, Math.floor(Number.isFinite(visitorChance.value) ? visitorChance.value : DEFAULT_BUSINESS_VISITOR_CHANCE))) / 100;
     if (Math.random() >= chance) {
-      return { seed: null, regularGuest: null, shouldInject: false, reason: 'miss' };
+      return { seed: null, regularGuest: null, shouldInject: false, reason: 'miss', rumorPending: false };
     }
     const regularGuest = pickRegularGuestForRevisit();
     if (regularGuest) {
@@ -3939,6 +4091,7 @@ export const useGameStore = defineStore('primordia', () => {
         regularGuest,
         shouldInject: true,
         reason: 'regular',
+        rumorPending,
       };
     }
     const seed = rollVisitorSeed();
@@ -3947,6 +4100,7 @@ export const useGameStore = defineStore('primordia', () => {
       regularGuest: null,
       shouldInject: true,
       reason: 'hit',
+      rumorPending,
     };
   }
 
@@ -4096,8 +4250,16 @@ export const useGameStore = defineStore('primordia', () => {
 
   function formatBusinessVisitorPlan(plan: TavernBusinessVisitorPlan | null) {
     if (!plan?.shouldInject) return '';
-    if (plan.regularGuest) return formatRegularGuestRevisitPrompt(plan.regularGuest);
+    const rumorPrompt = plan.rumorPending ? formatVisitorRumorPrompt() : '';
+    if (plan.regularGuest) return [formatRegularGuestRevisitPrompt(plan.regularGuest), rumorPrompt].filter(Boolean).join('\n\n');
     if (!plan.seed) return '';
+    if (rumorPrompt) {
+      return [
+        `酒馆门口新来的动静：${plan.seed.text}`,
+        '如果这批客人实际进店、点单或留下需求，请在正文后追加 <guest_update> JSON 数组，供前端服务托盘记录。',
+        rumorPrompt,
+      ].join('\n');
+    }
     return [
       `酒馆门口新来的动静：${plan.seed.text}`,
       '如果这批客人实际进店、点单或留下需求，请在正文后追加 <guest_update> JSON 数组，供前端服务托盘记录。',
@@ -6683,6 +6845,8 @@ export const useGameStore = defineStore('primordia', () => {
       tavernMaintenance: clonePlain(tavernMaintenance.value),
       businessAgreements: clonePlain(businessAgreements.value),
       businessSettlementRecords: clonePlain(businessSettlementRecords.value),
+      rumorRecords: clonePlain(rumorRecords.value),
+      rumorDailyState: clonePlain(rumorDailyState.value),
       generatedShop: generatedShop.value ? clonePlain(generatedShop.value) : null,
       generatedShopProducts: clonePlain(generatedShopProducts.value),
       farmPlots: clonePlain(farmPlots.value),
@@ -6756,6 +6920,8 @@ export const useGameStore = defineStore('primordia', () => {
     tavernMaintenance.value = normalizeMaintenanceList(snapshot.tavernMaintenance);
     businessAgreements.value = normalizeAgreementList(snapshot.businessAgreements);
     businessSettlementRecords.value = normalizeSettlementRecords(snapshot.businessSettlementRecords);
+    rumorRecords.value = normalizeRumorRecords(snapshot.rumorRecords);
+    rumorDailyState.value = normalizeRumorDailyState(snapshot.rumorDailyState);
     generatedShop.value = snapshot.generatedShop ? clonePlain(snapshot.generatedShop) : null;
     generatedShopProducts.value = clonePlain(snapshot.generatedShopProducts);
     farmPlots.value = clonePlain(snapshot.farmPlots);
@@ -7937,6 +8103,8 @@ export const useGameStore = defineStore('primordia', () => {
       tavernMaintenance: clonePlain(tavernMaintenance.value),
       businessAgreements: clonePlain(businessAgreements.value),
       businessSettlementRecords: clonePlain(businessSettlementRecords.value),
+      rumorRecords: clonePlain(rumorRecords.value),
+      rumorDailyState: clonePlain(rumorDailyState.value),
       engineLogs: clonePlain(engineLogs.value),
       generatedShop: activeGeneratedShop ? clonePlain(activeGeneratedShop) : null,
       generatedShopProducts: activeGeneratedShop ? clonePlain(generatedShopProducts.value) : [],
@@ -8142,6 +8310,8 @@ export const useGameStore = defineStore('primordia', () => {
       tavernMaintenance: normalizeMaintenanceList(source.tavernMaintenance),
       businessAgreements: normalizeAgreementList(source.businessAgreements),
       businessSettlementRecords: normalizeSettlementRecords(source.businessSettlementRecords),
+      rumorRecords: normalizeRumorRecords(source.rumorRecords),
+      rumorDailyState: normalizeRumorDailyState(source.rumorDailyState),
       engineLogs: Array.isArray(source.engineLogs) ? clonePlain(source.engineLogs) : clonePlain(engineLogs.value),
       generatedShop: normalizedShop,
       generatedShopProducts: normalizedProducts,
@@ -8295,6 +8465,8 @@ export const useGameStore = defineStore('primordia', () => {
     tavernMaintenance.value = normalizeMaintenanceList(normalized.tavernMaintenance);
     businessAgreements.value = normalizeAgreementList(normalized.businessAgreements);
     businessSettlementRecords.value = normalizeSettlementRecords(normalized.businessSettlementRecords);
+    rumorRecords.value = normalizeRumorRecords(normalized.rumorRecords);
+    rumorDailyState.value = normalizeRumorDailyState(normalized.rumorDailyState);
     engineLogs.value = clonePlain(normalized.engineLogs);
     draftActions.value = clonePlain(normalized.draftActions ?? []);
     openingSave.value = normalized.opening ? clonePlain(normalized.opening) : null;
@@ -8315,7 +8487,8 @@ export const useGameStore = defineStore('primordia', () => {
     const nextPromiseMemos = normalizePromiseMemoList(normalized.promiseMemos);
     const nextRecipes = mergeRecipeEntries(recipes.value, normalized.recipes);
     const nextFormulas = normalizeStateFormulaList([...tavernStateFormulas.value, ...(normalized.tavernStateFormulas ?? [])]);
-    const changed = Boolean(nextPromiseMemos.length || nextRecipes.length || nextFormulas.length || normalized.businessAgreements?.length);
+    const nextRumors = normalizeRumorRecords(normalized.rumorRecords);
+    const changed = Boolean(nextPromiseMemos.length || nextRecipes.length || nextFormulas.length || normalized.businessAgreements?.length || nextRumors.length);
     if (!changed) return false;
     promiseMemos.value = nextPromiseMemos;
     recipes.value = nextRecipes;
@@ -8323,6 +8496,8 @@ export const useGameStore = defineStore('primordia', () => {
     tavernMaintenance.value = normalizeMaintenanceList(normalized.tavernMaintenance);
     businessAgreements.value = normalizeAgreementList(normalized.businessAgreements);
     businessSettlementRecords.value = normalizeSettlementRecords(normalized.businessSettlementRecords);
+    rumorRecords.value = nextRumors;
+    rumorDailyState.value = normalizeRumorDailyState(normalized.rumorDailyState);
     return true;
   }
 
@@ -8337,7 +8512,7 @@ export const useGameStore = defineStore('primordia', () => {
       .sort((a, b) => b.messageId - a.messageId)
       .find(entry => {
         const normalized = normalizeSaveSnapshot(entry.floorSnapshot);
-        return Boolean(normalized && (normalized.promiseMemos?.length || normalized.recipes?.length || normalized.tavernStateFormulas?.length || normalized.businessAgreements?.length));
+        return Boolean(normalized && (normalized.promiseMemos?.length || normalized.recipes?.length || normalized.tavernStateFormulas?.length || normalized.businessAgreements?.length || normalized.rumorRecords?.length));
       });
     if (fallback && restoreFrontendOnlySnapshot(fallback.floorSnapshot)) return true;
     const mergedRecipes = mergeRecipeEntries(
@@ -8895,6 +9070,8 @@ export const useGameStore = defineStore('primordia', () => {
     tavernMaintenance.value = [];
     businessAgreements.value = [];
     businessSettlementRecords.value = [];
+    rumorRecords.value = [];
+    rumorDailyState.value = { dateKey: currentRumorDateKey(), rolled: false, pending: false, used: false };
     generatedShop.value = null;
     generatedShopProducts.value = [];
     draftActions.value = [];
@@ -10937,6 +11114,10 @@ export const useGameStore = defineStore('primordia', () => {
       if (changed) applied.push(`常客 ${changed}条`);
     }
 
+    if (wants('rumor') && latest.rumorRecords?.length && addRumorRecords(latest.rumorRecords, completedTurn)) {
+      applied.push(`听闻 ${latest.rumorRecords.length}条`);
+    }
+
     if (wants('promise') && latest.promiseUpdates?.length && applyPromiseUpdates(latest.promiseUpdates)) {
       applied.push(`约定 ${latest.promiseUpdates.length}条`);
     }
@@ -11141,6 +11322,7 @@ export const useGameStore = defineStore('primordia', () => {
         if (result.latest?.craftResult) applyCraftResult(result.latest.craftResult);
         if (result.latest?.guestUpdates?.length) applyGuestUpdates(result.latest.guestUpdates, successfulNarrationTurn.value + 1);
         if (result.latest?.regularGuestUpdates?.length) addPendingRegularGuestUpdates(result.latest.regularGuestUpdates, successfulNarrationTurn.value + 1);
+        if (result.latest?.rumorRecords?.length) addRumorRecords(result.latest.rumorRecords, successfulNarrationTurn.value + 1);
         if (result.latest?.promiseUpdates?.length) applyPromiseUpdates(result.latest.promiseUpdates);
         const completedTurn = successfulNarrationTurn.value + 1;
         if (result.latest?.businessAgreementUpdates?.length) applyBusinessAgreementUpdates(result.latest.businessAgreementUpdates);
@@ -11269,7 +11451,7 @@ export const useGameStore = defineStore('primordia', () => {
       combined.includes('【本回合标准结算单】');
     const npcActivityPlan = isPrebuiltNarrationPrompt ? null : prepareTavernNpcActivityPlan(combined);
     const backgroundFlowPlan = isPrebuiltNarrationPrompt ? null : prepareBackgroundFlowPlan();
-    const businessVisitorPlan = isPrebuiltNarrationPrompt ? null : prepareBusinessVisitorPlan();
+    const businessVisitorPlan = isPrebuiltNarrationPrompt ? null : prepareBusinessVisitorPlan({ rollRumor: false });
     const scenePrompt = isPrebuiltNarrationPrompt
       ? combined
       : buildNarrationPrompt({
@@ -11405,6 +11587,7 @@ export const useGameStore = defineStore('primordia', () => {
     guestGroups,
     regularGuests,
     pendingRegularGuestUpdates,
+    rumorRecords,
     regularGuestBookWorldbookBinding,
     regularGuestBookWorldbookStatus,
     inventory,

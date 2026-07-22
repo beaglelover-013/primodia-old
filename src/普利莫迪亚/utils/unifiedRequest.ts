@@ -5,6 +5,7 @@
   parseOptions,
   parsePromiseUpdates,
   parseRegularGuestUpdates,
+  parseRumorRecords,
   parseShop,
   parseSum,
   type LatestMaintextPayload,
@@ -589,6 +590,7 @@ function normalizeAssistantMessage(raw: string): {
   const craftResult = extractLastTag(cleaned, 'craft_result');
   const guestUpdate = extractLastTag(cleaned, 'guest_update');
   const regularGuestUpdate = extractLastTag(cleaned, 'regular_guest_update');
+  const rumorRecord = extractLastTag(cleaned, 'rumor_record');
   const promiseUpdate = extractLastTag(cleaned, 'promise_update');
   const characterBehaviorUpdate = extractLastTag(cleaned, 'character_behavior_update');
   const shop = extractLastTag(cleaned, 'shop');
@@ -627,6 +629,7 @@ function normalizeAssistantMessage(raw: string): {
   if (craftResult) message += `\n\n<craft_result>\n${craftResult}\n</craft_result>`;
   if (guestUpdate) message += `\n\n<guest_update>\n${guestUpdate}\n</guest_update>`;
   if (regularGuestUpdate) message += `\n\n<regular_guest_update>\n${regularGuestUpdate}\n</regular_guest_update>`;
+  if (rumorRecord) message += `\n\n<rumor_record>\n${rumorRecord}\n</rumor_record>`;
   if (promiseUpdate) message += `\n\n<promise_update>\n${promiseUpdate}\n</promise_update>`;
   if (characterBehaviorUpdate) message += `\n\n<character_behavior_update>\n${characterBehaviorUpdate}\n</character_behavior_update>`;
 
@@ -645,6 +648,7 @@ function normalizeAssistantMessage(raw: string): {
       craftResult: parseCraftResult(message),
       guestUpdates: parseGuestUpdates(message),
       regularGuestUpdates: parseRegularGuestUpdates(message),
+      rumorRecords: parseRumorRecords(message),
       promiseUpdates: parsePromiseUpdates(message),
       characterBehaviorUpdates: parseCharacterBehaviorUpdates(message),
       fullMessage: mvuMessage,
@@ -658,6 +662,7 @@ function stripHiddenOutputTags(content: string): string {
     .replace(/<craft_result\b[^>]*>[\s\S]*?<\/craft_result>/gi, '')
     .replace(/<guest_update\b[^>]*>[\s\S]*?<\/guest_update>/gi, '')
     .replace(/<regular_guest_update\b[^>]*>[\s\S]*?<\/regular_guest_update>/gi, '')
+    .replace(/<rumor_record\b[^>]*>[\s\S]*?<\/rumor_record>/gi, '')
     .replace(/<promise_update\b[^>]*>[\s\S]*?<\/promise_update>/gi, '')
     .replace(/<character_behavior_update\b[^>]*>[\s\S]*?<\/character_behavior_update>/gi, '')
     .replace(/<UpdateVariable\b[^>]*>[\s\S]*?<\/UpdateVariable>/gi, '')

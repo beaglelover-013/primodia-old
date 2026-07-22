@@ -28,6 +28,7 @@ const selectedRegionTemporaryStates = computed<TemporaryStateDisplay[]>(() => {
   if (!regionName) return [];
   return game.flattenTemporaryStates().filter(state => state.targetType === '酒馆区域' && state.targetName === regionName);
 });
+const recentRumors = computed(() => game.rumorRecords.slice(0, 8));
 
 const addOpen = ref(false);
 const addTarget = ref<TavernRegion | null>(null);
@@ -336,6 +337,24 @@ function assignWorkerToRegion(r: TavernRegion) {
           <strong>{{ game.lastBackgroundFlow }}</strong>
         </section>
 
+        <section class="rumor-board">
+          <div class="rg-fac-title">
+            <span>近日听闻</span>
+          </div>
+          <div v-if="recentRumors.length" class="rumor-list">
+            <article v-for="rumor in recentRumors" :key="rumor.id" class="rumor-item">
+              <div class="rumor-meta">
+                <span class="pm-tag gold">{{ rumor.type }}</span>
+                <small>{{ rumor.date || rumor.dateKey }}</small>
+                <small>{{ rumor.source }}</small>
+              </div>
+              <p>{{ rumor.content }}</p>
+              <em v-if="rumor.place">{{ rumor.place }}</em>
+            </article>
+          </div>
+          <div v-else class="pm-empty compact">最近还没有客人口信。</div>
+        </section>
+
         <div class="rg-meta">
           <span v-if="selectedRegion.conditionReason" class="pm-tag warn">{{ selectedRegion.conditionReason }}</span>
           <span class="pm-tag">{{ selectedRegion.style }}</span>
@@ -600,6 +619,49 @@ function assignWorkerToRegion(r: TavernRegion) {
 .visitor-note strong {
   font-weight: 500;
   line-height: 1.7;
+}
+.rumor-board {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--pm-line-soft);
+  border-radius: 4px;
+  background: rgba(255, 248, 226, 0.48);
+}
+.rumor-board .rg-fac-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.rumor-list {
+  display: grid;
+  gap: 8px;
+}
+.rumor-item {
+  display: grid;
+  gap: 5px;
+  padding: 9px 10px;
+  border: 1px dashed var(--pm-line-soft);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.34);
+}
+.rumor-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.rumor-meta small,
+.rumor-item em {
+  color: var(--pm-muted);
+  font-size: 11px;
+  font-style: normal;
+}
+.rumor-item p {
+  margin: 0;
+  line-height: 1.65;
 }
 
 .tavern-board {
