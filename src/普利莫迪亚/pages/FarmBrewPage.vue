@@ -14,7 +14,7 @@ const pendingEarlyTapId = ref('');
 const brewPortionsPerBottle = 4;
 
 const seedItems = computed(() =>
-  game.inventory.filter(item => item.category === '杂物' && item.qty > 0 && (item.tags.includes('种子') || /种子|籽/.test(item.name))),
+  game.inventory.filter(item => item.qty > 0),
 );
 
 watch(
@@ -112,7 +112,7 @@ function plantPlot(seed: InventoryItem) {
     game.pushLog('提示', result.message);
     return;
   }
-  game.appendDraft(`我在第${plot.id.slice(2)}号田畦播下「${seed.name}」，准备把它养成「${crop}」。预计${expectedHarvest}。（前端已结算：种子-1，田畦进入生长期。）`, { type: 'FARM_PLANT' });
+  game.appendDraft(`我在第${plot.id.slice(2)}号田畦播下「${seed.name}」，准备把它养成「${crop}」。预计${expectedHarvest}。（前端已结算：材料-1，田畦进入生长期。）`, { type: 'FARM_PLANT' });
   game.pushLog('提示', `播种 · ${crop} 已结算并加入行动框。`);
   seedPicker.open = false;
 }
@@ -218,7 +218,7 @@ function tapBrew(barrel: BrewBarrel) {
     <div class="pm-paper-body">
       <div class="pm-divider">— 农田 · 田畦展示 —</div>
       <div class="farm-actions">
-        <span class="pm-dim">种子来自库房杂物，带“种子”或“籽”的物品可以播种。</span>
+        <span class="pm-dim">种植材料来自库房；想种什么就选什么，前端只负责扣除 1 份并记录田畦。</span>
         <button class="pm-btn sm" @click="expandPlot">
           <PmIcon name="plus" :size="12" /> 开拓新畦
         </button>
@@ -244,7 +244,7 @@ function tapBrew(barrel: BrewBarrel) {
           </div>
           <div class="plot-acts">
             <button v-if="plot.stage === 0" class="pm-btn sm" @click="openSeedPicker(plot)">
-              <PmIcon name="plus" :size="11" /> 选择种子
+              <PmIcon name="plus" :size="11" /> 选择材料
             </button>
             <button v-if="plot.stage === 0" class="pm-btn sm ghost" @click="removePlot(plot)">
               <PmIcon name="x" :size="11" /> 删除
@@ -304,7 +304,7 @@ function tapBrew(barrel: BrewBarrel) {
       <div v-if="seedPicker.open" class="pm-modal-mask" @click.self="seedPicker.open = false">
         <div class="pm-modal">
           <header class="pm-modal-head">
-            <h3><PmIcon name="farm" :size="16" /> 选择种子 · 第{{ seedPicker.plot?.id.slice(2) }}号畦</h3>
+            <h3><PmIcon name="farm" :size="16" /> 选择种植材料 · 第{{ seedPicker.plot?.id.slice(2) }}号畦</h3>
             <button class="pm-link" @click="seedPicker.open = false"><PmIcon name="x" :size="16" /></button>
           </header>
           <div class="pm-modal-body">
@@ -315,7 +315,7 @@ function tapBrew(barrel: BrewBarrel) {
                 <small>{{ seed.desc }}</small>
               </button>
             </div>
-            <div v-else class="pm-empty">库房里没有种子。去街坊商铺买到“种子”类杂物后，就能在这里播种。</div>
+            <div v-else class="pm-empty">库房里没有可用物品。</div>
           </div>
           <footer class="pm-modal-foot">
             <button class="pm-btn ghost" @click="seedPicker.open = false">取消</button>

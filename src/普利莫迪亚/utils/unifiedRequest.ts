@@ -884,7 +884,7 @@ function mergeAuthoritativeData(
     keepGeneratedProtagonistStats?: boolean;
   } = {},
 ): Record<string, any> {
-  const next = mergeData(target, source);
+  const next = cloneData(target);
 
   // Frontend-settled flows keep the frontend snapshot. Free-text inventory changes may
   // deliberately arrive through MVU/JSONPatch, so let the parsed target inventory survive

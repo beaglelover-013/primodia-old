@@ -7012,7 +7012,7 @@ export const useGameStore = defineStore('primordia', () => {
     const plot = farmPlots.value.find(item => item.id === action.plotId);
     const seed = inventory.value.find(item => item.id === action.seedId);
     if (!plot) return { ok: false, tone: 'red', message: '没有找到这块田畦。' };
-    if (!seed || seed.qty <= 0) return { ok: false, tone: 'red', message: '这份种子已经没有了。' };
+    if (!seed || seed.qty <= 0) return { ok: false, tone: 'red', message: '这份材料已经没有了。' };
     const plantedDay = currentCalendarDay();
     seed.qty -= 1;
     plot.crop = action.crop;
@@ -7031,7 +7031,7 @@ export const useGameStore = defineStore('primordia', () => {
       tone: 'green',
       message: `第${plot.id.slice(2)}号畦已播下「${seed.name}」。`,
       shouldAskAI: false,
-      narrativeFact: `当前位置为「${currentSceneLabel()}」。玩家在农田与酒窖的第${plot.id.slice(2)}号畦播下「${seed.name}」，种子消耗1份，记为「${action.crop}」。`,
+      narrativeFact: `当前位置为「${currentSceneLabel()}」。玩家在农田与酒窖的第${plot.id.slice(2)}号畦播下「${seed.name}」，材料消耗1份，记为「${action.crop}」。`,
       aiHint: '无需生成正文。',
     };
   }
@@ -10200,11 +10200,21 @@ export const useGameStore = defineStore('primordia', () => {
 
   function inventoryItemFromRecord(name: string, raw: unknown, category: InventoryItem['category'], fallbackId: string): InventoryItem | null {
     const item = asRecord(raw);
-    const qty = Math.max(0, Math.floor(readLooseNumber(item, ['数量', 'qty', 'count'], 0)));
-    if (!name || qty <= 0) return null;
     const tags = Array.isArray(item['标签'])
       ? item['标签'].map(tag => String(tag).trim()).filter(Boolean)
       : String(item['标签'] ?? item['tags'] ?? '').split(/[、,，]/).map(tag => tag.trim()).filter(Boolean);
+    const isSeedItem = category === '杂物' && (tags.includes('种子') || /种子|籽/.test(name));
+    const qty = Math.max(
+      0,
+      Math.floor(
+        readLooseNumber(
+          item,
+          isSeedItem ? ['数量', 'qty', 'count', '份数', '份量', '库存份数', 'portions'] : ['数量', 'qty', 'count'],
+          0,
+        ),
+      ),
+    );
+    if (!name || qty <= 0) return null;
     const portionsPerUnit = Math.max(1, Math.floor(readLooseNumber(item, ['每件份数', '每件份量', 'portionsPerUnit'], 1)));
     const remainingPortions = Math.max(0, Math.min(portionsPerUnit, Math.floor(readLooseNumber(item, ['当前剩余份数', '剩余份数', 'remainingPortions'], portionsPerUnit))));
     return {
