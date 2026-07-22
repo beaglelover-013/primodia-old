@@ -7083,6 +7083,11 @@ export const useGameStore = defineStore('primordia', () => {
     const variableShopName = currentVariableShopName.value.trim();
     const variablePlaceText = currentVariablePlaceText.value.trim();
     const placeText = currentPlaceText();
+    const localPlaceMatches =
+      (expectedName && shopNameMatchesPlace(expectedName, placeText)) ||
+      (!expectedName && currentShopName && shopNameMatchesPlace(currentShopName, placeText));
+
+    if (localPlaceMatches) return true;
 
     if (variableShopName) {
       if (expectedName) return expectedName === variableShopName || variablePlaceMatchesShopName(expectedName, variableShopName);
@@ -7094,8 +7099,6 @@ export const useGameStore = defineStore('primordia', () => {
       if (currentShopName) return variablePlaceMatchesShopName(currentShopName, variablePlaceText);
       return false;
     }
-    if (expectedName && shopNameMatchesPlace(expectedName, placeText)) return true;
-    if (!expectedName && currentShopName && shopNameMatchesPlace(currentShopName, placeText)) return true;
     if (expectedName) return false;
     return isShopLikePlace(placeText);
   }
