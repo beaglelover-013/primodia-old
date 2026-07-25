@@ -92,6 +92,7 @@ import {
 import { readChatVariable, writeChatVariable } from '../services/variables';
 import type { ActionResultBase, LocationSnapshot } from '../types/domain';
 import { legacyPathAliases } from '../utils/legacyMojibake';
+import { markDisplayedBranchFloorsStale, removeMarkedBranchFloors } from '../utils/sameFloor';
 import { parseNarrativeMvuMessage, previewUnifiedNarrativeRequest, runUnifiedNarrativeRequest } from '../utils/unifiedRequest';
 import {
   findNearestShopBefore,
@@ -5323,6 +5324,7 @@ export const useGameStore = defineStore('primordia', () => {
     if (lastMessageId <= messageId) return true;
 
     const messageIds = Array.from({ length: lastMessageId - messageId }, (_, index) => messageId + index + 1);
+    markDisplayedBranchFloorsStale(messageIds);
     // Keep the host floor alive while truncating. A full refresh destroys this
     // iframe and loses the selected checkpoint before the new turn is sent.
     await deleteChatMessages(messageIds, { refresh: 'none' });
@@ -12090,6 +12092,7 @@ export const useGameStore = defineStore('primordia', () => {
         storyContinuityOverride.value = null;
         localStateDirty.value = false;
         await writeChatSave(result.latest);
+        removeMarkedBranchFloors();
         pushLog('叙事', 'AI叙述已写入楼层并刷新前端。', {
           source: 'ai',
           authoritative: false,

@@ -6,7 +6,7 @@ import Sidebar from './components/Sidebar.vue';
 import BottomDock from './components/BottomDock.vue';
 import PmIcon from './components/PmIcon.vue';
 import ServiceTray from './components/ServiceTray.vue';
-import { activateSameFloorMode } from './utils/sameFloor';
+import { activateSameFloorMode, removeMarkedBranchFloors } from './utils/sameFloor';
 
 const game = useGameStore();
 const OpeningWorkshop = defineAsyncComponent(() => import('./components/OpeningWorkshop.vue'));
@@ -236,6 +236,7 @@ function handleAppWheel(event: WheelEvent) {
 }
 
 onMounted(() => {
+  removeMarkedBranchFloors();
   deactivateSameFloorMode = activateSameFloorMode();
   window.addEventListener('wheel', handleAppWheel, { capture: true, passive: false });
   window.addEventListener('resize', scheduleHostFrameSize, { passive: true });

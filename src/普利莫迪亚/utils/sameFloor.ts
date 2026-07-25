@@ -2,7 +2,9 @@ const SAME_FLOOR_BODY_CLASS = 'primordia-same-floor-active';
 const SAME_FLOOR_STYLE_ID = 'primordia-same-floor-style';
 const SAME_FLOOR_HOST_CLASS = 'primordia-ui-host-floor';
 const SAME_FLOOR_HOST_ATTR = 'data-primordia-ui-host-message-id';
+const STALE_BRANCH_FLOOR_ATTR = 'data-primordia-stale-branch-floor';
 const NATIVE_GENERATION_TIMEOUT_MS = 180_000;
+let nativeNarrativeTurnInFlight = false;
 
 export interface NativeNarrativeTurnOptions {
   createUserMessage?: boolean;
@@ -45,8 +47,13 @@ function isLatestMessageId(messageId: number) {
   return typeof getLastMessageId !== 'function' || messageId === getLastMessageId();
 }
 
+function isStaleBranchFloor(element: HTMLElement) {
+  return element.hasAttribute(STALE_BRANCH_FLOOR_ATTR);
+}
+
 function findParentFloorElement(messageId: number, parentDocument = getParentDocument()): HTMLElement | undefined {
-  return parentDocument?.querySelector<HTMLElement>(`#chat .mes[mesid="${messageId}"]`) ?? undefined;
+  const floors = [...(parentDocument?.querySelectorAll<HTMLElement>(`#chat .mes[mesid="${messageId}"]`) ?? [])];
+  return floors.find(element => !isStaleBranchFloor(element));
 }
 
 function readRegisteredHostMessageId(parentDocument = getParentDocument()): number | undefined {
@@ -72,6 +79,26 @@ function registerHostFloor(messageId: number, parentDocument = getParentDocument
     element.classList.remove(SAME_FLOOR_HOST_CLASS);
   });
   findParentFloorElement(messageId, parentDocument)?.classList.add(SAME_FLOOR_HOST_CLASS);
+}
+
+export function markDisplayedBranchFloorsStale(messageIds: number[]) {
+  const parentDocument = getParentDocument();
+  if (!parentDocument) return;
+  const stamp = `${Date.now()}`;
+  [...new Set(messageIds)].forEach(messageId => {
+    parentDocument.querySelectorAll<HTMLElement>(`#chat .mes[mesid="${messageId}"]`).forEach(element => {
+      element.setAttribute(STALE_BRANCH_FLOOR_ATTR, stamp);
+      element.classList.remove(SAME_FLOOR_HOST_CLASS);
+    });
+  });
+}
+
+export function removeMarkedBranchFloors() {
+  const parentDocument = getParentDocument();
+  if (!parentDocument) return;
+  parentDocument.querySelectorAll<HTMLElement>(`#chat .mes[${STALE_BRANCH_FLOOR_ATTR}]`).forEach(element => {
+    element.remove();
+  });
 }
 
 function buildSameFloorStyle(hostMessageId?: number): string {
@@ -203,16 +230,6 @@ function submitThroughNativeComposer(userText: string): boolean {
   return true;
 }
 
-async function waitForLastMessageAfter(baselineMessageId: number, timeoutMs = 2500): Promise<number | undefined> {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    const currentLastMessageId = typeof getLastMessageId === 'function' ? getLastMessageId() : undefined;
-    if (typeof currentLastMessageId === 'number' && currentLastMessageId > baselineMessageId) return currentLastMessageId;
-    await new Promise(resolve => window.setTimeout(resolve, 100));
-  }
-  return undefined;
-}
-
 function requestNativeRegeneration(): boolean {
   const parentDocument = getParentDocument();
   const regenerateButton = parentDocument?.querySelector<HTMLElement>('#option_regenerate');
@@ -271,6 +288,10 @@ export async function runNativeNarrativeTurn(
   if (typeof eventOn !== 'function' || typeof tavern_events === 'undefined') {
     throw new Error('当前环境没有提供 ST 原生消息事件。');
   }
+  if (nativeNarrativeTurnInFlight) {
+    throw new Error('已有一轮原生生成正在进行，请等待本轮结束后再发送。');
+  }
+  nativeNarrativeTurnInFlight = true;
 
   const createUserMessage = options.createUserMessage !== false;
   const baselineMessageId = typeof getLastMessageId === 'function' ? getLastMessageId() : -1;
@@ -334,19 +355,13 @@ export async function runNativeNarrativeTurn(
       );
 
       timeoutId = window.setTimeout(() => {
-        recoverAssistantOrReject(new Error('Native generation timed out after content may have been written.'));
-      }, NATIVE_GENERATION_TIMEOUT_MS);
-
-      timeoutId = window.setTimeout(() => {
-        finish(() => reject(new Error('等待 ST 原生回复超时。')));
+        recoverAssistantOrReject(new Error('等待 ST 原生回复超时。'));
       }, NATIVE_GENERATION_TIMEOUT_MS);
 
       void (async () => {
         if (createUserMessage) {
           if (submitThroughNativeComposer(userText)) {
-            const nativeUserMessageId = await waitForLastMessageAfter(baselineMessageId);
-            if (typeof nativeUserMessageId === 'number') return;
-            console.warn('[primordia] 原生输入框点击后没有创建用户楼层，回退到 createChatMessages + /trigger。');
+            return;
           }
           await createChatMessages(
             [
@@ -372,6 +387,7 @@ export async function runNativeNarrativeTurn(
     await userStampPromise;
     return { assistantMessage, userMessageId, streamedText };
   } finally {
+    nativeNarrativeTurnInFlight = false;
     window.clearTimeout(timeoutId);
     stopEventListeners(stops);
   }
