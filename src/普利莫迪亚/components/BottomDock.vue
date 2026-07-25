@@ -9,6 +9,7 @@ const mobileDetailsOpen = ref(false);
 const captureRetrying = ref(false);
 const captureNotice = ref('');
 let captureNoticeTimer = 0;
+let sendInFlight = false;
 
 onUnmounted(() => window.clearTimeout(captureNoticeTimer));
 
@@ -27,13 +28,19 @@ function removeLog(id: string) {
 }
 
 async function send() {
-  await game.sendActionDraft();
+  if (sendInFlight || game.isGenerating) return;
+  sendInFlight = true;
+  try {
+    await game.sendActionDraft();
+  } finally {
+    sendInFlight = false;
+  }
 }
 
 async function handlePlayerInputKeydown(event: KeyboardEvent) {
   if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
   event.preventDefault();
-  if (game.isGenerating || (!game.actionDraft.trim() && !game.playerInput.trim())) return;
+  if (sendInFlight || game.isGenerating || (!game.actionDraft.trim() && !game.playerInput.trim())) return;
   await send();
 }
 

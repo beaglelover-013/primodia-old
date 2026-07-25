@@ -239,6 +239,27 @@ export interface InventoryItem {
   recipeSource?: RecipeSource;
 }
 
+function dishUnitsForName(name: string) {
+  const trimmed = name.trim();
+  if (!trimmed) return undefined;
+  const compact = trimmed.replace(/[「」"'“”‘’（）()【】\[\]\s]/g, '');
+  const endsWith = (patterns: string[]) => patterns.some(pattern => compact.endsWith(pattern));
+
+  if (endsWith(['汤', '浓汤', '清汤', '羹', '粥', '热粥', '冷粥', '面汤', '米汤'])) return { unit: '碗', portionUnit: '碗' };
+  if (endsWith(['面', '拉面', '汤面', '拌面', '炒面', '冷面', '米线', '粉', '河粉', '米粉', '馄饨', '馄饨汤'])) return { unit: '碗', portionUnit: '碗' };
+  if (endsWith(['炒饭', '烩饭', '盖饭', '焗饭', '拌饭', '炖饭', '饭'])) return { unit: '盘', portionUnit: '盘' };
+  if (endsWith(['炖菜', '炒菜', '烩菜', '焖菜', '煎菜', '拌菜', '凉菜', '沙拉', '拼盘', '冷盘'])) return { unit: '盘', portionUnit: '盘' };
+  if (endsWith(['炖肉', '烤肉', '炒肉', '煎肉', '焖肉', '肉排', '排餐', '烤鱼', '煎鱼', '炖鱼', '鱼排'])) return { unit: '盘', portionUnit: '盘' };
+  if (endsWith(['炖锅', '火锅', '砂锅', '杂锅', '一锅炖'])) return { unit: '锅', portionUnit: '碗' };
+  if (endsWith(['饼', '薄饼', '煎饼', '馅饼', '烤饼', '披萨', '派'])) return { unit: '张', portionUnit: '块' };
+  if (endsWith(['蛋糕', '糕', '糕点', '布丁', '冻', '塔', '甜派'])) return { unit: '块', portionUnit: '块' };
+  if (endsWith(['面包', '餐包', '小面包', '馒头', '包子', '饭团', '团子', '丸子', '肉丸', '鱼丸'])) return { unit: '个', portionUnit: '个' };
+  if (endsWith(['串', '肉串', '鱼串', '蔬菜串'])) return { unit: '串', portionUnit: '串' };
+  if (endsWith(['卷', '肉卷', '菜卷', '蛋卷'])) return { unit: '卷', portionUnit: '卷' };
+  if (endsWith(['酱', '蘸酱', '果酱', '调味酱'])) return { unit: '罐', portionUnit: '勺' };
+  return undefined;
+}
+
 export function inventoryUnitsFor(
   item: Pick<InventoryItem, 'name' | 'category' | 'tags' | 'unit' | 'portionUnit' | 'portionsPerUnit'>,
 ) {
@@ -247,10 +268,12 @@ export function inventoryUnitsFor(
   const perServing = Math.max(1, Math.floor(Number(item.portionsPerUnit) || 1));
   const explicitUnit = String(item.unit || '').trim();
   const explicitSubunit = String(item.portionUnit || '').trim();
+  const dishUnits = item.category === '成品' ? dishUnitsForName(name) : undefined;
 
   let naturalUnit = explicitUnit;
   if (!naturalUnit || naturalUnit === '份') {
-    if (/鸡蛋|鸭蛋|鹅蛋|鸟蛋|蛋$/.test(text)) naturalUnit = '枚';
+    if (dishUnits) naturalUnit = dishUnits.unit;
+    else if (/鸡蛋|鸭蛋|鹅蛋|鸟蛋|蛋$/.test(text)) naturalUnit = '枚';
     else if (/胡萝卜|白萝卜|萝卜|葱|芦笋|芹菜|黄瓜|玉米|甘蔗/.test(text)) naturalUnit = '根';
     else if (/卷心菜|白菜|甘蓝|生菜|花椰菜|西兰花|莴苣/.test(text)) naturalUnit = '颗';
     else if (/土豆|洋葱|番茄|番薯|红薯|苹果|梨|橙|柠檬|南瓜|甜菜|蘑菇/.test(text)) naturalUnit = '个';
@@ -276,7 +299,8 @@ export function inventoryUnitsFor(
 
   let portionUnit = explicitSubunit && explicitSubunit !== '份' ? explicitSubunit : '';
   if (!portionUnit) {
-    if (item.category === '酒水') portionUnit = '杯';
+    if (dishUnits) portionUnit = dishUnits.portionUnit;
+    else if (item.category === '酒水') portionUnit = '杯';
     else if (/猪肉|牛肉|羊肉|鸡肉|鸭肉|鹅肉|鱼肉|咸肉|熏肉|培根|香肠|肉类|奶酪|黄油|豆腐/.test(text)) portionUnit = '块';
     else if (/鱼$|鲈鱼|鳟鱼|鲑鱼|鳕鱼|鲤鱼|河鱼|海鱼/.test(text)) portionUnit = '条';
     else if (/鸡蛋|鸭蛋|鹅蛋|鸟蛋|蛋$/.test(text)) portionUnit = '枚';
@@ -3582,6 +3606,7 @@ export const useGameStore = defineStore('primordia', () => {
   });
   const playerInput = ref<string>('');
   const isGenerating = ref(false);
+  let sendActionInFlight = false;
   const localStateDirty = ref(false);
   const loadedStoryCheckpoint = ref<StoryIndexItem | null>(null);
   const visibleStoryMessageId = ref<number | null>(null);
@@ -12094,53 +12119,58 @@ export const useGameStore = defineStore('primordia', () => {
   }
 
   async function sendActionDraft(options: { reloadMvu?: boolean } = {}) {
-    if (isGenerating.value) return;
+    if (sendActionInFlight || isGenerating.value) return;
     if (!actionDraft.value.trim() && !playerInput.value.trim()) return;
-    lastTickAt.value = Date.now();
-    const canContinue = await continueFromLoadedCheckpoint();
-    if (!canContinue) return;
-    const combined = [actionDraft.value.trim(), playerInput.value.trim()].filter(Boolean).join('\n—— 玩家旁白 ——\n');
-    const queuedRequirements = draftActions.value.filter(action => action.hidden || action.aiHint?.trim() || action.settledFact?.trim());
-    const hiddenAiHint = queuedRequirements.map(action => action.aiHint?.trim()).filter(Boolean).join('\n\n');
-    const hiddenSettledFact = aggregateHiddenSettledFacts(queuedRequirements);
-    const isPrebuiltNarrationPrompt =
-      /<玩家本回合行动>|【叙述者权限边界】|【当前权威局势】|【输出格式】/.test(combined) ||
-      combined.includes('【系统已结算 / 权威局势】') ||
-      combined.includes('【本回合标准结算单】');
-    const customActionResult = isPrebuiltNarrationPrompt ? null : dispatchAction({ type: 'CUSTOM_ACTION', text: combined, title: '玩家本回合行动' });
-    if (customActionResult && !customActionResult.ok) {
-      pushLog('提示', customActionResult.message, {
-        source: 'engine',
-        authoritative: true,
-        tone: 'red',
-        actionType: 'CUSTOM_ACTION',
-      });
-      return;
-    }
-    const npcActivityPlan = isPrebuiltNarrationPrompt ? null : prepareTavernNpcActivityPlan(combined, { logSkip: true });
-    const backgroundFlowPlan = isPrebuiltNarrationPrompt ? null : prepareBackgroundFlowPlan();
-    const businessVisitorPlan = isPrebuiltNarrationPrompt ? null : prepareBusinessVisitorPlan();
-    const scenePrompt = isPrebuiltNarrationPrompt
-      ? combined
-      : buildNarrationPrompt({
-          userText: `<user>${combined}</user>`,
+    sendActionInFlight = true;
+    try {
+      lastTickAt.value = Date.now();
+      const canContinue = await continueFromLoadedCheckpoint();
+      if (!canContinue) return;
+      const combined = [actionDraft.value.trim(), playerInput.value.trim()].filter(Boolean).join('\n—— 玩家旁白 ——\n');
+      const queuedRequirements = draftActions.value.filter(action => action.hidden || action.aiHint?.trim() || action.settledFact?.trim());
+      const hiddenAiHint = queuedRequirements.map(action => action.aiHint?.trim()).filter(Boolean).join('\n\n');
+      const hiddenSettledFact = aggregateHiddenSettledFacts(queuedRequirements);
+      const isPrebuiltNarrationPrompt =
+        /<玩家本回合行动>|【叙述者权限边界】|【当前权威局势】|【输出格式】/.test(combined) ||
+        combined.includes('【系统已结算 / 权威局势】') ||
+        combined.includes('【本回合标准结算单】');
+      const customActionResult = isPrebuiltNarrationPrompt ? null : dispatchAction({ type: 'CUSTOM_ACTION', text: combined, title: '玩家本回合行动' });
+      if (customActionResult && !customActionResult.ok) {
+        pushLog('提示', customActionResult.message, {
+          source: 'engine',
+          authoritative: true,
+          tone: 'red',
           actionType: 'CUSTOM_ACTION',
-          actionTitle: '玩家本回合行动',
-          settledFact: hiddenSettledFact || undefined,
-          aiHint: [customActionResult?.aiHint, hiddenAiHint].filter(Boolean).join('\n\n'),
-          npcActivityPlan,
-          backgroundFlowPlan,
-          businessVisitorPlan,
         });
-    await submitNarrationPrompt(scenePrompt, combined, {
-      ...options,
-      ...(queuedRequirements.some(action => action.settledFact)
-        ? { reloadMvu: false, applyInventoryFromMvu: false }
-        : {}),
-      npcActivityPlan,
-      backgroundFlowPlan,
-      businessVisitorPlan,
-    });
+        return;
+      }
+      const npcActivityPlan = isPrebuiltNarrationPrompt ? null : prepareTavernNpcActivityPlan(combined, { logSkip: true });
+      const backgroundFlowPlan = isPrebuiltNarrationPrompt ? null : prepareBackgroundFlowPlan();
+      const businessVisitorPlan = isPrebuiltNarrationPrompt ? null : prepareBusinessVisitorPlan();
+      const scenePrompt = isPrebuiltNarrationPrompt
+        ? combined
+        : buildNarrationPrompt({
+            userText: `<user>${combined}</user>`,
+            actionType: 'CUSTOM_ACTION',
+            actionTitle: '玩家本回合行动',
+            settledFact: hiddenSettledFact || undefined,
+            aiHint: [customActionResult?.aiHint, hiddenAiHint].filter(Boolean).join('\n\n'),
+            npcActivityPlan,
+            backgroundFlowPlan,
+            businessVisitorPlan,
+          });
+      await submitNarrationPrompt(scenePrompt, combined, {
+        ...options,
+        ...(queuedRequirements.some(action => action.settledFact)
+          ? { reloadMvu: false, applyInventoryFromMvu: false }
+          : {}),
+        npcActivityPlan,
+        backgroundFlowPlan,
+        businessVisitorPlan,
+      });
+    } finally {
+      sendActionInFlight = false;
+    }
   }
 
   async function previewActionDraftBeforeSend() {
