@@ -193,7 +193,7 @@ function parse_configuration(entry: Entry): (_env: any, argv: any) => webpack.Co
     experiments: {
       outputModule: true,
     },
-    devtool: argv.mode === 'production' ? 'source-map' : 'eval-source-map',
+    devtool: argv.mode === 'production' ? (process.env.SOURCE_MAP === '1' ? 'source-map' : false) : 'eval-source-map',
     watchOptions: {
       ignored: ['**/dist', '**/node_modules'],
     },
@@ -465,7 +465,7 @@ function parse_configuration(entry: Entry): (_env: any, argv: any) => webpack.Co
         new webpack.optimize.LimitChunkCountPlugin({ maxChunks: 1 }),
         new webpack.DefinePlugin({
           __VUE_OPTIONS_API__: false,
-          __VUE_PROD_DEVTOOLS__: process.env.CI !== 'true',
+          __VUE_PROD_DEVTOOLS__: process.env.VUE_PROD_DEVTOOLS === '1',
           __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: false,
         }),
       )

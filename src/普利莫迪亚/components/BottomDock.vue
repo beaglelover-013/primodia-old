@@ -31,9 +31,9 @@ async function send() {
 }
 
 async function handlePlayerInputKeydown(event: KeyboardEvent) {
-  if (event.key !== 'Enter' || event.shiftKey) return;
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
   event.preventDefault();
-  if (game.isGenerating || !game.turnContextWorldbookReady || (!game.actionDraft.trim() && !game.playerInput.trim())) return;
+  if (game.isGenerating || (!game.actionDraft.trim() && !game.playerInput.trim())) return;
   await send();
 }
 
@@ -167,7 +167,7 @@ function logTitle(log: EngineLog) {
             <PmIcon name="scroll" :size="14" />
             <span>发送前预检</span>
           </button>
-          <button id="dock-send" class="pm-btn dark big" :disabled="game.isGenerating || !game.turnContextWorldbookReady || (!game.actionDraft.trim() && !game.playerInput.trim())" @click="send">
+          <button id="dock-send" class="pm-btn dark big" :disabled="game.isGenerating || (!game.actionDraft.trim() && !game.playerInput.trim())" @click="send">
             <PmIcon name="send" :size="14" />
             <span>{{ game.isGenerating ? '生成中' : '发出决定' }}</span>
           </button>

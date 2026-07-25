@@ -9,6 +9,7 @@ import {
   loadAssistantStoryIndex,
   loadLatestAssistantMaintext,
   parseMaintext,
+  parseStoryMessage,
   type LatestMaintextPayload,
   type ParsedOption,
   type StoryIndexItem,
@@ -35,6 +36,13 @@ const turnActionText = ref('');
 const turnActionError = ref('');
 const visibleTurnActionMessageId = ref<number | undefined>(undefined);
 const pendingTurnActionMessageId = ref<number | undefined>(undefined);
+const storySwipe = ref<{
+  messageId?: number;
+  activeIndex: number;
+  previewIndex: number;
+  messages: string[];
+}>({ activeIndex: 0, previewIndex: 0, messages: [] });
+const showStoryReroll = false;
 const editingMessage = ref<{
   messageId: number;
   currentText: string;
@@ -70,6 +78,19 @@ const chapterMark = computed(() =>
   latestMessage.value.messageId === undefined ? '' : `楼层 #${latestMessage.value.messageId}`,
 );
 const isViewingLoadedLayer = computed(() => pendingLoadMessageId.value !== null);
+const storyVersionCount = computed(() => storySwipe.value.messages.length);
+const storyVersionNumber = computed(() =>
+  storyVersionCount.value ? Math.min(storyVersionCount.value, storySwipe.value.previewIndex + 1) : 1,
+);
+const canRerollCurrentStory = computed(() => {
+  const messageId = latestMessage.value.messageId;
+  return (
+    !isViewingLoadedLayer.value &&
+    typeof messageId === 'number' &&
+    typeof getLastMessageId === 'function' &&
+    messageId === getLastMessageId()
+  );
+});
 const isPendingTurnAction = computed(
   () =>
     hasMessageId(pendingTurnActionMessageId.value) &&
@@ -109,7 +130,7 @@ const satchelItemKinds = computed(() => game.satchel.filter(item => item.qty > 0
 const satchelItemCount = computed(() => game.satchel.reduce((total, item) => total + Math.max(0, item.qty), 0));
 
 function openSatchel() {
-  game.currentTab = 'inventory';
+  game.currentTab = 'protagonist';
 }
 
 function promisePeopleText(memo: PromiseMemo) {
@@ -157,11 +178,13 @@ function refreshMaintext(options: { keepLoadedView?: boolean; resetLoadedView?: 
       pendingLoadMessageId.value = game.loadedStoryCheckpoint.messageId;
     }
     storyIndex.value = loadAssistantStoryIndex();
+    refreshStorySwipe();
     refreshTurnAction();
     return;
   }
   latestMessage.value = loadLatestAssistantMaintext();
   storyIndex.value = loadAssistantStoryIndex();
+  refreshStorySwipe(undefined, true);
   pendingLoadMessageId.value = null;
   game.setLoadedStoryCheckpoint(null);
   showOptions.value = false;
@@ -169,11 +192,73 @@ function refreshMaintext(options: { keepLoadedView?: boolean; resetLoadedView?: 
   refreshTurnAction();
 }
 
+function refreshStorySwipe(preferredPreviewIndex?: number, followActive = false) {
+  const messageId = latestMessage.value.messageId;
+  if (!hasMessageId(messageId) || typeof getChatMessages !== 'function') {
+    storySwipe.value = { messageId, activeIndex: 0, previewIndex: 0, messages: [] };
+    return;
+  }
+  try {
+    const message = getChatMessages(messageId, {
+      role: 'assistant',
+      hide_state: 'all',
+      include_swipes: true,
+    })[0];
+    const messages = [...(message?.swipes ?? [])];
+    if (!messages.length && latestMessage.value.fullMessage) messages.push(latestMessage.value.fullMessage);
+    const activeIndex = Math.max(0, Math.min(Math.max(0, messages.length - 1), message?.swipe_id ?? 0));
+    const keepPreview =
+      followActive || storySwipe.value.messageId !== messageId ? activeIndex : storySwipe.value.previewIndex;
+    const previewIndex = Math.max(
+      0,
+      Math.min(Math.max(0, messages.length - 1), preferredPreviewIndex ?? keepPreview),
+    );
+    storySwipe.value = { messageId, activeIndex, previewIndex, messages };
+  } catch {
+    storySwipe.value = {
+      messageId,
+      activeIndex: 0,
+      previewIndex: 0,
+      messages: latestMessage.value.fullMessage ? [latestMessage.value.fullMessage] : [],
+    };
+  }
+}
+
+async function selectStoryVersion(index: number) {
+  const state = storySwipe.value;
+  const messageId = latestMessage.value.messageId;
+  if (!hasMessageId(messageId) || index < 0 || index >= state.messages.length || index === state.previewIndex) return;
+
+  if (canRerollCurrentStory.value) {
+    if (typeof setChatMessages !== 'function') {
+      game.pushLog('系统', '当前环境没有提供楼层版本切换接口。');
+      return;
+    }
+    await setChatMessages([{ message_id: messageId, swipe_id: index }], { refresh: 'affected' });
+    refreshMaintext({ resetLoadedView: true });
+    game.pushLog('系统', `已采用楼层 #${messageId} 的版本 ${index + 1}。`);
+    return;
+  }
+
+  const preview = parseStoryMessage(state.messages[index] ?? '', messageId);
+  latestMessage.value = preview;
+  storySwipe.value = { ...state, previewIndex: index };
+}
+
+function selectPreviousStoryVersion() {
+  void selectStoryVersion(storySwipe.value.previewIndex - 1);
+}
+
+function selectNextStoryVersion() {
+  void selectStoryVersion(storySwipe.value.previewIndex + 1);
+}
+
 function restoreLoadedPreview() {
   if (!game.loadedStoryCheckpoint) return false;
   latestMessage.value = game.loadedStoryCheckpoint;
   pendingLoadMessageId.value = game.loadedStoryCheckpoint.messageId;
   storyIndex.value = loadAssistantStoryIndex();
+  refreshStorySwipe();
   showOptions.value = false;
   contextMenu.value = null;
   return true;
@@ -299,6 +384,11 @@ async function regenerateLatest(options: { userMessageId?: number; authoritative
     closeContextMenu();
     return false;
   }
+  if (!canRerollCurrentStory.value) {
+    game.pushLog('系统', '只能重 roll 最新的 assistant 楼层；旧楼层版本仅供阅读。');
+    closeContextMenu();
+    return false;
+  }
 
   try {
     game.isGenerating = true;
@@ -314,7 +404,7 @@ async function regenerateLatest(options: { userMessageId?: number; authoritative
       /动作类型:\s*CUSTOM_ACTION/.test(userText) ||
       (/自由行动造成的库存、状态或地点变化|若行动自然影响库存/.test(userText) && !userText.includes('前端已结算:'));
     const result = await runNarrativeRequest(userText, {
-      createUserMessage: options.createUserMessage ?? true,
+      createUserMessage: options.createUserMessage ?? false,
       authoritativeData: game.getAuthoritativeMvuData(options.authoritativeMessageId ?? userMessageId),
       turnContextWorldbookBinding: game.turnContextWorldbookBinding,
       worldbookScanText: game.buildWorldbookScanPreview(),
@@ -338,6 +428,13 @@ async function regenerateLatest(options: { userMessageId?: number; authoritative
     }
     await game.writeChatSave(result.latest);
     refreshMaintext();
+    refreshStorySwipe(undefined, true);
+    game.pushLog(
+      '系统',
+      storyVersionCount.value > 1
+        ? `已在楼层 #${messageId} 生成版本 ${storyVersionNumber.value}/${storyVersionCount.value}。`
+        : `已重 roll 楼层 #${messageId}，但当前环境没有追加出多个可切换版本。`,
+    );
     return true;
   } catch (error) {
     game.restoreAfterFailedRegeneration(userMessageId);
@@ -388,7 +485,7 @@ async function saveTurnActionAndRegenerate() {
     const regenerated = await regenerateLatest({
       userMessageId: editing.userMessageId,
       authoritativeMessageId: editing.userMessageId,
-      createUserMessage: true,
+      createUserMessage: false,
     });
     if (!regenerated) {
       await writeUserMessageText(editing.userMessageId, editing.originalText, 'none');
@@ -503,6 +600,7 @@ async function loadStoryCheckpoint(item: StoryIndexItem) {
   game.restoreStorySnapshot(item.messageId);
   isLoadOpen.value = false;
   latestMessage.value = item;
+  refreshStorySwipe();
   pendingLoadMessageId.value = item.messageId;
   showOptions.value = false;
   contextMenu.value = null;
@@ -534,6 +632,7 @@ onMounted(() => {
     game.setLoadedStoryCheckpoint(null);
     latestMessage.value = payload;
     storyIndex.value = loadAssistantStoryIndex();
+    refreshStorySwipe(undefined, true);
     refreshTurnAction();
     showOptions.value = false;
   });
@@ -607,6 +706,17 @@ watch(
           <PmIcon name="ledger" :size="15" />
           读档
         </button>
+        <button
+          v-if="showStoryReroll && hasMaintext"
+          class="tool-btn mobile-reroll"
+          type="button"
+          :disabled="game.isGenerating || !canRerollCurrentStory || isPendingTurnAction"
+          :title="canRerollCurrentStory ? '在当前楼层新增一个回复版本' : '只能重 roll 最新 assistant 楼层'"
+          @click="regenerateLatest()"
+        >
+          <PmIcon name="refresh" :size="15" />
+          {{ game.isGenerating ? '处理中' : '重 roll' }}
+        </button>
       </header>
 
       <template v-if="hasMaintext">
@@ -615,10 +725,32 @@ watch(
             <p class="kicker">{{ game.tavernName }} · {{ isViewingLoadedLayer ? '临时读档' : '本回合正文' }}</p>
             <h1>{{ isViewingLoadedLayer ? '临时读档记录' : '最新楼层记录' }}</h1>
           </div>
-          <span v-if="chapterMark" class="chapter-mark">
-            <PmIcon name="ledger" :size="18" />
-            {{ chapterMark }}
-          </span>
+          <div class="story-head-meta">
+            <span v-if="chapterMark" class="chapter-mark">
+              <PmIcon name="ledger" :size="18" />
+              {{ chapterMark }}
+            </span>
+            <div v-if="showStoryReroll && storyVersionCount > 1" class="story-version-switcher">
+              <button
+                type="button"
+                title="上一个版本"
+                :disabled="storySwipe.previewIndex <= 0"
+                @click="selectPreviousStoryVersion"
+              >
+                <PmIcon name="chevron-left" :size="14" />
+              </button>
+              <span>版本 {{ storyVersionNumber }}/{{ storyVersionCount }}</span>
+              <button
+                type="button"
+                title="下一个版本"
+                :disabled="storySwipe.previewIndex >= storyVersionCount - 1"
+                @click="selectNextStoryVersion"
+              >
+                <PmIcon name="chevron-right" :size="14" />
+              </button>
+              <small v-if="isViewingLoadedLayer">仅预览</small>
+            </div>
+          </div>
         </header>
 
         <section v-if="isViewingLoadedLayer" class="load-notice">
@@ -773,7 +905,13 @@ watch(
           <span>正文操作</span>
           <button type="button" @click="closeContextMenu"><PmIcon name="x" :size="14" /></button>
         </header>
-        <button type="button" :disabled="game.isGenerating" @click="regenerateLatest">
+        <button
+          v-if="showStoryReroll"
+          type="button"
+          :disabled="game.isGenerating || !canRerollCurrentStory"
+          :title="canRerollCurrentStory ? '在当前楼层新增一个回复版本' : '只能重 roll 最新 assistant 楼层'"
+          @click="regenerateLatest"
+        >
           {{ game.isGenerating ? '处理中...' : '重 roll' }}
         </button>
         <button type="button" :disabled="game.isGenerating" @click="openEditTurnAction">修改本回合行动</button>
@@ -1217,6 +1355,9 @@ watch(
   gap: 8px;
   margin-bottom: 16px;
 }
+.mobile-reroll {
+  display: none;
+}
 .tool-btn {
   display: inline-flex;
   align-items: center;
@@ -1246,6 +1387,11 @@ watch(
   align-items: start;
   margin-bottom: 18px;
 }
+.story-head-meta {
+  display: grid;
+  justify-items: end;
+  gap: 7px;
+}
 .kicker {
   margin: 0 0 6px;
   color: #9a753d;
@@ -1271,6 +1417,44 @@ h1 {
   background: rgba(190, 158, 109, 0.16);
   border: 1px solid rgba(154, 117, 61, 0.28);
   font-size: calc(12px * var(--pm-text-scale));
+  white-space: nowrap;
+}
+.story-version-switcher {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 3px 5px;
+  color: #6f552e;
+  border: 1px solid rgba(154, 117, 61, 0.25);
+  border-radius: 4px;
+  background: rgba(255, 252, 240, 0.42);
+  font-size: calc(11px * var(--pm-text-scale));
+}
+.story-version-switcher button {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 23px;
+  padding: 0;
+  color: #654a26;
+  border: 1px solid rgba(132, 94, 42, 0.28);
+  border-radius: 3px;
+  background: rgba(255, 250, 231, 0.58);
+}
+.story-version-switcher button:disabled {
+  cursor: default;
+  opacity: 0.36;
+}
+.story-version-switcher span {
+  min-width: 68px;
+  text-align: center;
+  white-space: nowrap;
+}
+.story-version-switcher small {
+  padding: 2px 5px;
+  color: #8b6534;
+  border-left: 1px solid rgba(154, 117, 61, 0.24);
   white-space: nowrap;
 }
 .load-notice {
@@ -1753,6 +1937,9 @@ h1 {
     min-width: 0;
     padding-inline: 7px;
   }
+  .page-tools .mobile-reroll {
+    display: inline-flex;
+  }
   .story-body.interactive {
     cursor: default;
     user-select: text;
@@ -1802,6 +1989,15 @@ h1 {
   }
   .story-head {
     flex-direction: column;
+  }
+  .story-head-meta {
+    width: 100%;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    justify-items: start;
+  }
+  .story-version-switcher {
+    justify-self: end;
   }
   .custom-row {
     grid-template-columns: 1fr;

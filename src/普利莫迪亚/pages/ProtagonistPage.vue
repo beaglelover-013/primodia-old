@@ -19,17 +19,12 @@ const energyPercent = computed(() => `${Math.max(0, Math.min(100, (energyValue.v
 const satchelItems = computed(() => game.satchel.filter(item => item.qty > 0));
 const satchelItemKinds = computed(() => satchelItems.value.length);
 const satchelItemCount = computed(() => satchelItems.value.reduce((total, item) => total + Math.max(0, item.qty), 0));
-const satchelPreviewItems = computed(() => satchelItems.value.slice(0, 6));
 const protagonistTemporaryStates = computed(() =>
   game.flattenTemporaryStates().filter(state => state.targetType === '主角'),
 );
 
 function stockUnit(item: InventoryItem) {
   return game.inventoryStockUnitForItem(item);
-}
-
-function openSatchel() {
-  game.currentTab = 'inventory';
 }
 
 function trainCooking() {
@@ -110,20 +105,19 @@ function trainCooking() {
           <span>{{ satchelItemKinds }} 种 · {{ satchelItemCount }} 件</span>
         </header>
 
-        <div v-if="satchelPreviewItems.length" class="satchel-list">
-          <button v-for="item in satchelPreviewItems" :key="item.id" type="button" @click="openSatchel">
-            <strong>{{ item.name }}</strong>
+        <div v-if="satchelItems.length" class="satchel-list">
+          <article v-for="item in satchelItems" :key="item.id">
+            <div>
+              <strong>{{ item.name }}</strong>
+              <small>{{ item.category }}</small>
+            </div>
             <span>×{{ item.qty }}{{ stockUnit(item) }}</span>
-          </button>
+          </article>
         </div>
         <div v-else class="pm-empty compact">行囊里暂时没有物品。</div>
 
         <footer class="satchel-foot">
-          <small v-if="satchelItemKinds > satchelPreviewItems.length">还有 {{ satchelItemKinds - satchelPreviewItems.length }} 种未展开。</small>
-          <small v-else>行囊只负责显示和取用，不迁移变量。</small>
-          <button class="pm-btn sm ghost" type="button" @click="openSatchel">
-            <PmIcon name="ledger" :size="12" /> 打开行囊
-          </button>
+          <small>个人行囊完整显示于主角档案，酒馆库房位于物资页。</small>
         </footer>
       </section>
     </div>
@@ -271,7 +265,7 @@ function trainCooking() {
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 8px;
 }
-.satchel-list button {
+.satchel-list article {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -284,15 +278,20 @@ function trainCooking() {
   color: var(--pm-ink);
   text-align: left;
 }
-.satchel-list button:hover {
-  border-color: rgba(167, 121, 45, 0.82);
-  background: rgba(255, 247, 222, 0.86);
+.satchel-list article > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
 }
 .satchel-list strong {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.satchel-list small {
+  color: var(--pm-ink-dim);
+  font-size: calc(10px * var(--pm-text-scale));
 }
 .satchel-list span {
   color: var(--pm-ink-dim);

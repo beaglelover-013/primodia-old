@@ -327,7 +327,7 @@ const tabComponent = computed(() => {
 
 const tabTitle = computed(
   () => {
-    const inventoryTitle = game.canUseStorageInventoryHere() ? '行囊与库房' : '个人行囊';
+    const inventoryTitle = game.canUseStorageInventoryHere() ? '行囊与库房' : '酒馆库房';
     return ({
       opening: '开场选择',
       chronicle: '正文与行动',

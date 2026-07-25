@@ -98,7 +98,9 @@ const fastForward = reactive({
   hours: 4,
   intensity: '正常' as '低调' | '正常' | '热闹' | '通宵',
 });
+const fastForwardEnabled = false;
 function openFastForward() {
+  if (!fastForwardEnabled) return;
   fastForward.open = true;
 }
 async function runFastForward() {
@@ -268,7 +270,7 @@ function assignWorkerToRegion(r: TavernRegion) {
           <PmIcon :name="game.isBusinessOpen ? 'x' : 'tavern'" :size="14" />
           {{ game.isBusinessOpen ? '歇业' : '开始营业' }}
         </button>
-        <button id="btn-fast-forward" class="pm-btn dark" @click="openFastForward">
+        <button v-if="fastForwardEnabled" id="btn-fast-forward" class="pm-btn dark" @click="openFastForward">
           <PmIcon name="hourglass" :size="14" />
           经营快进
         </button>
@@ -484,7 +486,7 @@ function assignWorkerToRegion(r: TavernRegion) {
     </div>
 
     <!-- 添置设施弹窗 -->
-    <Teleport to="body">
+    <Teleport v-if="fastForwardEnabled" to="body">
       <div v-if="addOpen" class="pm-modal-mask" @click.self="addOpen = false">
         <div class="pm-modal">
           <header class="pm-modal-head">

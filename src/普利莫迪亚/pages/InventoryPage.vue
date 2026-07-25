@@ -9,7 +9,7 @@ const game = useGameStore();
 type Cat = '全部' | InventoryItem['category'];
 const categories: Cat[] = ['全部', '食材', '调料', '成品', '酒水', '日用品', '杂物'];
 const currentCat = ref<Cat>('全部');
-const inventoryView = ref<InventorySource>('satchel');
+const inventoryView = ref<InventorySource>('storage');
 
 interface SlotEntry {
   itemId: string;
@@ -19,15 +19,18 @@ const slots = ref<SlotEntry[]>([]);
 const slotLogIds = ref<string[]>([]);
 const selectedServeGuestId = ref('');
 type MoveDirection = 'to_storage' | 'to_satchel';
+type UseTargetType = '自己' | '人物' | '区域';
 const activeMove = ref<{ itemId: string; direction: MoveDirection; qty: number } | null>(null);
 const activeUse = ref<{ itemId: string; source: InventorySource; target: string } | null>(null);
+const useTargetTab = ref<UseTargetType>('人物');
+const useTargetSearch = ref('');
 const isSatchelView = computed(() => inventoryView.value === 'satchel');
 const canUseStorageHere = computed(() => game.canUseStorageInventoryHere());
-const inventoryPageTitle = computed(() => (canUseStorageHere.value ? '行囊与库房' : '个人行囊'));
+const inventoryPageTitle = computed(() => (canUseStorageHere.value ? '行囊与库房' : '酒馆库房'));
 const inventoryPageSub = computed(() =>
   canUseStorageHere.value
     ? '行囊使用与入库 · 库房整理与取出 · 成品可在这里直接上菜'
-    : '随身物品查看与使用 · 库房需回到酒馆后整理取用',
+    : '酒馆库存远程查看 · 回到酒馆后可整理、取出与使用',
 );
 const canUseActiveInventory = computed(() => isSatchelView.value || canUseStorageHere.value);
 const activeInventory = computed(() => (isSatchelView.value ? game.satchel : game.inventory));
@@ -69,6 +72,27 @@ const itemUseTargets = computed(() => [
     value: `酒馆区域：${region.name}`,
   })),
 ]);
+const useTargetTabs = computed(() => {
+  const counts = itemUseTargets.value.reduce<Record<UseTargetType, number>>((acc, target) => {
+    acc[target.type as UseTargetType] += 1;
+    return acc;
+  }, { 自己: 0, 人物: 0, 区域: 0 });
+  return ([
+    { type: '人物', label: '人物', count: counts.人物 + counts.自己 },
+    { type: '区域', label: '区域', count: counts.区域 },
+  ] satisfies Array<{ type: '人物' | '区域'; label: string; count: number }>);
+});
+const selectedUseTarget = computed(() => itemUseTargets.value.find(target => target.value === activeUse.value?.target) ?? itemUseTargets.value[0]);
+const filteredUseTargets = computed(() => {
+  const keyword = useTargetSearch.value.trim().toLowerCase();
+  const list = itemUseTargets.value.filter(target =>
+    useTargetTab.value === '区域'
+      ? target.type === '区域'
+      : target.type === '人物' || target.type === '自己',
+  );
+  if (!keyword) return list;
+  return list.filter(target => `${target.type} ${target.name} ${target.value}`.toLowerCase().includes(keyword));
+});
 watch(
   serveGuests,
   guests => {
@@ -85,7 +109,7 @@ watch(
 watch(
   canUseStorageHere,
   canUseStorage => {
-    if (!canUseStorage && inventoryView.value === 'storage') inventoryView.value = 'satchel';
+    if (!canUseStorage) inventoryView.value = 'storage';
   },
   { immediate: true },
 );
@@ -163,6 +187,10 @@ function formatPortionCost(it: InventoryItem) {
 function handleTileClick(it: InventoryItem) {
   if (isSatchelView.value) {
     game.pushLog('提示', '行囊里的物品可以点“使用”或“整理入库”。');
+    return;
+  }
+  if (!canUseStorageHere.value) {
+    game.pushLog('提示', '当前不在酒馆内，库房只供查看。回到酒馆后才能取用或上菜。');
     return;
   }
   addToSlots(it);
@@ -248,6 +276,8 @@ function openUsePanel(it: InventoryItem, source: InventorySource) {
     source,
     target: itemUseTargets.value[0]?.value ?? `主角：${game.protagonist.name || '主角'}`,
   };
+  useTargetSearch.value = '';
+  useTargetTab.value = game.heroines.length ? '人物' : '区域';
 }
 
 function isUsePanelOpen(it: InventoryItem) {
@@ -257,6 +287,15 @@ function isUsePanelOpen(it: InventoryItem) {
 function setUseTarget(value: string) {
   if (!activeUse.value) return;
   activeUse.value.target = value;
+}
+
+function setUseTargetTab(tab: '人物' | '区域') {
+  useTargetTab.value = tab;
+  useTargetSearch.value = '';
+  const current = activeUse.value?.target;
+  if (current && filteredUseTargets.value.some(target => target.value === current)) return;
+  const next = filteredUseTargets.value[0];
+  if (next) setUseTarget(next.value);
 }
 
 async function confirmMove(it: InventoryItem) {
@@ -471,13 +510,18 @@ function qualityTone(q?: InventoryItem['quality']) {
       </div>
     </header>
 
-    <div class="pm-paper-body inv-layout">
+    <div class="pm-paper-body inv-layout" :class="{ 'storage-readonly': !canUseStorageHere }">
       <div class="inv-left">
         <div class="inventory-mode-tabs" aria-label="库存视图切换">
-          <button class="mode-tab" :class="{ active: inventoryView === 'satchel' }" @click="inventoryView = 'satchel'">
+          <button
+            v-if="canUseStorageHere"
+            class="mode-tab"
+            :class="{ active: inventoryView === 'satchel' }"
+            @click="inventoryView = 'satchel'"
+          >
             <PmIcon name="ledger" :size="13" /> 个人行囊
           </button>
-          <button v-if="canUseStorageHere" class="mode-tab" :class="{ active: inventoryView === 'storage' }" @click="inventoryView = 'storage'">
+          <button class="mode-tab" :class="{ active: inventoryView === 'storage' }" @click="inventoryView = 'storage'">
             <PmIcon name="pot" :size="13" /> 库房
           </button>
         </div>
@@ -498,7 +542,11 @@ function qualityTone(q?: InventoryItem['quality']) {
               v-for="it in items"
               :key="it.id"
               class="inv-tile"
-              :class="{ compact: !isServeItem(it), clickable: !isSatchelView }"
+              :class="{
+                compact: !isServeItem(it),
+                clickable: !isSatchelView,
+                activePopover: isUsePanelOpen(it) || isMovePanelOpen(it, isSatchelView ? 'to_storage' : 'to_satchel'),
+              }"
               :title="isSatchelView ? '行囊物品可使用或整理入库' : '加入上菜选择'"
               @click="handleTileClick(it)"
             >
@@ -525,7 +573,7 @@ function qualityTone(q?: InventoryItem['quality']) {
                 <span class="pm-num inv-tile-qty">× {{ it.qty }}{{ stockUnit(it) }}</span>
                 <span class="price">{{ formatCopper(it.priceCopper ?? 0) }}<small v-if="portionText(it)"> · {{ formatPortionCost(it) }}</small></span>
               </footer>
-              <label v-if="!isSatchelView" class="category-mover" title="整理到其他分类" @click.stop>
+              <label v-if="!isSatchelView && canUseStorageHere" class="category-mover" title="整理到其他分类" @click.stop>
                 <span>整理</span>
                 <select :value="it.category" @change="moveItemCategoryFromEvent(it, $event)">
                   <option v-for="categoryName in categories.filter(c => c !== '全部')" :key="categoryName" :value="categoryName">{{ categoryName }}</option>
@@ -543,25 +591,51 @@ function qualityTone(q?: InventoryItem['quality']) {
                 <button v-if="isSatchelView" class="recipe-save" @click.stop="openMovePanel(it, 'to_storage')">
                   整理入库
                 </button>
-                <button v-else class="recipe-save" @click.stop="openMovePanel(it, 'to_satchel')">
+                <button
+                  v-else
+                  class="recipe-save"
+                  :disabled="!canUseStorageHere"
+                  :title="canUseStorageHere ? '取出到个人行囊' : '当前不在酒馆内，库房只供查看'"
+                  @click.stop="openMovePanel(it, 'to_satchel')"
+                >
                   取出
                 </button>
               </div>
               <div v-if="isUsePanelOpen(it)" class="move-popover use-popover" @click.stop>
                 <div class="use-target">
-                  <span class="move-label">使用目标</span>
+                  <div class="use-target-head">
+                    <span class="move-label">使用目标</span>
+                    <strong>{{ selectedUseTarget?.name ?? '未选择' }}</strong>
+                  </div>
+                  <div class="use-target-tabs">
+                    <button
+                      v-for="tab in useTargetTabs"
+                      :key="tab.type"
+                      type="button"
+                      :class="{ active: useTargetTab === tab.type }"
+                      @click="setUseTargetTab(tab.type)"
+                    >
+                      {{ tab.label }}<small>{{ tab.count }}</small>
+                    </button>
+                  </div>
+                  <input
+                    v-model="useTargetSearch"
+                    class="use-target-search"
+                    type="search"
+                    placeholder="搜索目标..."
+                  />
                   <div class="use-target-list">
                     <button
-                      v-for="target in itemUseTargets"
+                      v-for="target in filteredUseTargets"
                       :key="target.value"
                       type="button"
                       class="use-target-option"
                       :class="{ active: activeUse?.target === target.value }"
                       @click="setUseTarget(target.value)"
                     >
-                      <span>{{ target.type }}</span>
                       <strong>{{ target.name }}</strong>
                     </button>
+                    <p v-if="!filteredUseTargets.length" class="use-target-empty">没有匹配目标</p>
                   </div>
                 </div>
                 <div class="move-actions">
@@ -623,7 +697,7 @@ function qualityTone(q?: InventoryItem['quality']) {
         </div>
       </div>
 
-      <aside class="inv-right">
+      <aside v-if="canUseStorageHere" class="inv-right">
         <div class="bench">
           <header class="bench-head">
             <div>
@@ -685,6 +759,9 @@ function qualityTone(q?: InventoryItem['quality']) {
   grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.82fr);
   gap: 14px;
   align-items: start;
+}
+.inv-layout.storage-readonly {
+  grid-template-columns: minmax(0, 1fr);
 }
 .inventory-mode-tabs {
   display: inline-flex;
@@ -750,10 +827,11 @@ function qualityTone(q?: InventoryItem['quality']) {
 }
 .inv-tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(154px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+  gap: 10px;
 }
 .inv-tile {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -763,6 +841,13 @@ function qualityTone(q?: InventoryItem['quality']) {
   border-radius: 4px;
   background: linear-gradient(180deg, rgba(255, 245, 215, 0.78), rgba(212, 186, 136, 0.5));
   box-shadow: inset 0 1px 0 rgba(255, 245, 215, 0.6);
+}
+.inv-tile.activePopover {
+  z-index: 30;
+  border-color: rgba(167, 121, 45, 0.72);
+  box-shadow:
+    0 10px 24px rgba(58, 38, 16, 0.2),
+    inset 0 1px 0 rgba(255, 245, 215, 0.72);
 }
 .inv-tile.clickable {
   cursor: pointer;
@@ -898,14 +983,24 @@ function qualityTone(q?: InventoryItem['quality']) {
   margin-top: 6px;
 }
 .move-popover {
+  position: absolute;
+  top: calc(100% - 2px);
+  left: 10px;
+  z-index: 40;
   display: grid;
   gap: 7px;
-  margin-top: 6px;
-  padding: 8px;
-  border: 1px solid rgba(131, 92, 34, 0.48);
+  width: min(280px, calc(100vw - 40px));
+  max-width: calc(100vw - 40px);
+  margin-top: 0;
+  padding: 10px;
+  border: 1px solid rgba(104, 72, 28, 0.64);
   border-radius: 4px;
-  background: rgba(255, 248, 225, 0.72);
-  box-shadow: inset 0 1px 0 rgba(255, 245, 215, 0.62);
+  background:
+    linear-gradient(180deg, rgba(255, 250, 233, 0.98), rgba(230, 202, 145, 0.96)),
+    var(--pm-paper);
+  box-shadow:
+    0 14px 30px rgba(48, 31, 12, 0.26),
+    0 0 0 1px rgba(255, 248, 218, 0.55) inset;
 }
 .move-label {
   color: var(--pm-ink-dim);
@@ -925,27 +1020,88 @@ function qualityTone(q?: InventoryItem['quality']) {
 .use-popover .move-actions {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
+.use-popover {
+  width: min(280px, calc(100vw - 40px));
+}
 .use-target {
   display: grid;
+  gap: 7px;
+}
+.use-target-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.use-target-head strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: calc(12px * var(--pm-text-scale));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.use-target-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 5px;
+}
+.use-target-tabs button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  border: 1px solid rgba(131, 92, 34, 0.38);
+  border-radius: 5px;
+  background: rgba(255, 248, 225, 0.64);
+  color: var(--pm-ink);
+  font-weight: 800;
+}
+.use-target-tabs button.active {
+  border-color: rgba(167, 121, 45, 0.9);
+  background: linear-gradient(180deg, #f3da90, #c9a04a);
+  box-shadow: inset 0 1px 0 rgba(255, 248, 218, 0.82);
+}
+.use-target-tabs small {
+  color: var(--pm-ink-dim);
+  font-size: calc(10px * var(--pm-text-scale));
+}
+.use-target-search {
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid rgba(131, 92, 34, 0.38);
+  border-radius: 5px;
+  background: rgba(255, 252, 238, 0.78);
+  color: var(--pm-ink);
+  padding: 0 8px;
 }
 .use-target-list {
   display: grid;
   gap: 4px;
-  max-height: 138px;
+  max-height: 176px;
   overflow-y: auto;
   padding: 3px;
   border: 1px solid rgba(131, 92, 34, 0.34);
   border-radius: 4px;
   background: rgba(255, 252, 238, 0.45);
 }
+
+@media (max-width: 560px) {
+  .inv-tiles {
+    grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+    gap: 8px;
+  }
+  .move-popover {
+    left: 0;
+    width: 100%;
+    max-width: none;
+  }
+}
 .use-target-option {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  gap: 6px;
   align-items: center;
-  min-height: 30px;
-  padding: 5px 7px;
+  min-height: 32px;
+  padding: 6px 9px;
   border: 1px solid rgba(131, 92, 34, 0.28);
   border-radius: 4px;
   background: rgba(255, 248, 225, 0.66);
@@ -961,11 +1117,6 @@ function qualityTone(q?: InventoryItem['quality']) {
   background: linear-gradient(180deg, #f3da90, #c9a04a);
   box-shadow: inset 0 1px 0 rgba(255, 248, 218, 0.82);
 }
-.use-target-option span {
-  color: var(--pm-ink-dim);
-  font-size: calc(10px * var(--pm-text-scale));
-  font-weight: 700;
-}
 .use-target-option strong {
   min-width: 0;
   overflow: hidden;
@@ -973,6 +1124,12 @@ function qualityTone(q?: InventoryItem['quality']) {
   font-size: calc(12px * var(--pm-text-scale));
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.use-target-empty {
+  margin: 6px 0;
+  color: var(--pm-ink-dim);
+  font-size: calc(11px * var(--pm-text-scale));
+  text-align: center;
 }
 .move-controls input {
   width: 100%;

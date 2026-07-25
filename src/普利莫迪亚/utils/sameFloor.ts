@@ -230,6 +230,18 @@ async function readChatMessage(messageId: number, role: ChatMessage['role']): Pr
   throw new Error(`原生楼层 #${messageId} 尚未写入聊天记录。`);
 }
 
+function findAssistantMessageAfter(baselineMessageId: number, includeBaseline = false): ChatMessage | undefined {
+  if (typeof getLastMessageId !== 'function' || typeof getChatMessages !== 'function') return undefined;
+  const lastMessageId = getLastMessageId();
+  const startMessageId = includeBaseline ? Math.max(0, baselineMessageId) : baselineMessageId + 1;
+  if (lastMessageId < startMessageId) return undefined;
+  const messages = getChatMessages(`${startMessageId}-${lastMessageId}`, { role: 'assistant', hide_state: 'all' }) ?? [];
+  return messages
+    .filter(message => Number(message?.message_id) >= startMessageId && String(message?.message ?? '').trim())
+    .sort((left, right) => Number(left.message_id ?? 0) - Number(right.message_id ?? 0))
+    .at(-1);
+}
+
 async function stampNativeUserMessage(messageId: number, options: NativeNarrativeTurnOptions) {
   const current = getChatMessages(messageId, { role: 'user' })[0];
   if (!current) return;
@@ -287,6 +299,15 @@ export async function runNativeNarrativeTurn(
         );
       };
 
+      const recoverAssistantOrReject = (error: Error) => {
+        const recovered = findAssistantMessageAfter(baselineMessageId, !createUserMessage);
+        if (recovered) {
+          finish(() => resolve(recovered));
+          return;
+        }
+        finish(() => reject(error));
+      };
+
       stops.push(
         eventOn(tavern_events.MESSAGE_SENT, messageId => {
           if (!createUserMessage || messageId <= baselineMessageId) return;
@@ -311,6 +332,10 @@ export async function runNativeNarrativeTurn(
           options.onStreamingText?.(streamedText);
         }),
       );
+
+      timeoutId = window.setTimeout(() => {
+        recoverAssistantOrReject(new Error('Native generation timed out after content may have been written.'));
+      }, NATIVE_GENERATION_TIMEOUT_MS);
 
       timeoutId = window.setTimeout(() => {
         finish(() => reject(new Error('等待 ST 原生回复超时。')));

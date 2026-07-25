@@ -468,7 +468,10 @@ export interface TavernStateFormula {
   id: string;
   name: string;
   targetRegion: string;
+  originalTargetRegion?: string;
+  regionResolved?: boolean;
   requirements: RecipeIngredient[];
+  durationTurns?: number;
   description: string;
   guestResponseHint: string;
   createdAt: number;
@@ -481,6 +484,7 @@ export interface TavernMaintenanceEntry {
   enabled: boolean;
   status: 'active' | 'shortage' | 'disabled';
   lastSettledTurn?: number;
+  remainingTurns?: number;
   pauseReason?: string;
 }
 
@@ -491,16 +495,26 @@ export interface BusinessAgreementInventoryChange {
   tags: string[];
 }
 
+export interface BusinessAgreementEventRule {
+  enabled: boolean;
+  prompt: string;
+  triggerTime: string;
+  scene: 'any' | 'tavern';
+  missedPolicy: 'past' | 'silent' | 'defer';
+  lastTriggeredDaySerial?: number;
+}
+
 export interface BusinessAgreement {
   id: string;
   kind: 'wage' | 'rent' | 'delivery' | 'sideBusiness';
   name: string;
   counterparty: string;
   enabled: boolean;
-  cadence: 'daily';
+  cadence: 'daily' | 'weekly';
   cashboxDeltaCopper: number;
   inventoryChanges: BusinessAgreementInventoryChange[];
   reminder: string;
+  eventRule?: BusinessAgreementEventRule;
   nextDueDaySerial: number;
   lastSettledDaySerial?: number;
 }
@@ -1065,6 +1079,7 @@ interface TavernBusinessState {
   currentGuests: number;
   guestCap: number;
   visitorChance: number;
+  rumorChance: number;
   lastVisitorSeed: string;
   backgroundGroups: BackgroundGuestGroup[];
   lastBackgroundFlow: string;
@@ -1091,12 +1106,33 @@ interface RumorDailyState {
   used: boolean;
 }
 
+type CharacterVisitEventKind = 'first' | 'arrival' | 'leave';
+
+interface CharacterVisitEvent {
+  id: string;
+  characterName: string;
+  kind: CharacterVisitEventKind;
+  prompt: string;
+  daySerial: number;
+  dueMinute?: number;
+  sent: boolean;
+}
+
+interface CharacterVisitSchedulerState {
+  firstClosed: Record<string, boolean>;
+  firstClosedLogged: Record<string, boolean>;
+  weeklyRolls: Record<string, { weekKey: string; dayIndexes: number[] }>;
+  events: CharacterVisitEvent[];
+}
+
 interface BackgroundOrder {
   itemId: string;
   name: string;
   category: InventoryItem['category'];
   count: number;
   unitPriceCopper: number;
+  unitLabel?: string;
+  portionBased?: boolean;
 }
 
 interface BackgroundGuestGroup {
@@ -1113,6 +1149,8 @@ interface BackgroundInventoryDelta {
   name: string;
   category: InventoryItem['category'];
   delta: number;
+  field: '数量' | '当前剩余份数';
+  unitLabel: string;
 }
 
 interface BackgroundFlowPlan {
@@ -1181,6 +1219,8 @@ interface PrimordiaSaveBody {
   businessSettlementRecords?: BusinessSettlementRecord[];
   rumorRecords?: RumorRecord[];
   rumorDailyState?: RumorDailyState;
+  characterVisitSchedulerEnabled?: boolean;
+  characterVisitSchedulerState?: CharacterVisitSchedulerState;
   engineLogs: EngineLog[];
   generatedShop: StreetShop | null;
   generatedShopProducts: ShopProduct[];
@@ -1243,6 +1283,8 @@ interface LocalSettlementSnapshot {
   businessSettlementRecords: BusinessSettlementRecord[];
   rumorRecords: RumorRecord[];
   rumorDailyState: RumorDailyState;
+  characterVisitSchedulerEnabled: boolean;
+  characterVisitSchedulerState: CharacterVisitSchedulerState;
   generatedShop: StreetShop | null;
   generatedShopProducts: ShopProduct[];
   farmPlots: FarmPlot[];
@@ -1877,7 +1919,33 @@ function buildOpeningFingerprint(parts: Array<unknown>) {
 }
 
 /* ---------- 常量与类型 ---------- */
-type TimeOfDay = '拂晓' | '清晨' | '上午' | '正午' | '午后' | '黄昏' | '入夜' | '深夜';
+type TimeOfDay = '' | '拂晓' | '清晨' | '上午' | '正午' | '午后' | '黄昏' | '入夜' | '深夜';
+type BackgroundTimeOfDay = Exclude<TimeOfDay, ''>;
+type BackgroundBehaviorTag =
+  | 'quiet'
+  | 'quick'
+  | 'brief'
+  | 'simple'
+  | 'corner'
+  | 'counter'
+  | 'lowTalk'
+  | 'priceAware'
+  | 'patient'
+  | 'tidy'
+  | 'watchful'
+  | 'takeaway'
+  | 'slow'
+  | 'chatty'
+  | 'direct'
+  | 'routine';
+
+interface BackgroundCustomerTemplate {
+  name: string;
+  prefers: string[];
+  behaviorTags: BackgroundBehaviorTag[];
+  baseWeight?: number;
+  timeWeights?: Partial<Record<BackgroundTimeOfDay, number>>;
+}
 
 function normalizeClockText(value: unknown, fallback = '00:00') {
   const match = String(value ?? '').match(/([01]?\d|2[0-3])\s*[:：]\s*([0-5]?\d)/);
@@ -1930,12 +1998,12 @@ export const useGameStore = defineStore('primordia', () => {
 
   /* HUD: 历法与位置 */
   const calendar = reactive({
-    year: 1303,
-    monthIndex: 4, // 0~11
-    day: 17,
-    timeOfDay: '黄昏' as TimeOfDay,
-    clock: '18:24',
-    weather: '未设天气' as string,
+    year: 0,
+    monthIndex: -1, // 0~11; -1 means not loaded from MVU yet.
+    day: 0,
+    timeOfDay: '' as TimeOfDay,
+    clock: '',
+    weather: '' as string,
     weatherIcon: 'sun' as 'sun' | 'cloud' | 'rain' | 'snow' | 'moon',
     weatherDescription: '',
     weatherDaySerial: 0,
@@ -1956,18 +2024,30 @@ export const useGameStore = defineStore('primordia', () => {
   ];
   const seasons = ['隆冬', '冬末', '初春', '仲春', '暮春', '初夏', '盛夏', '暮夏', '初秋', '仲秋', '暮秋', '初冬'];
   const weekDays = ['一日', '二日', '三日', '四日', '市日', '六日', '七日'];
+  const hasReadableCalendar = computed(
+    () =>
+      calendar.year > 0 &&
+      calendar.monthIndex >= 0 &&
+      calendar.monthIndex < months.length &&
+      calendar.day > 0 &&
+      Boolean(normalizeClockText(calendar.clock, '')),
+  );
   const seasonText = computed(() => seasons[calendar.monthIndex] ?? '');
-  const weekDayIndex = computed(() => Math.max(0, (currentCalendarDay() - 1) % 7));
+  const weekDayIndex = computed(() => (hasReadableCalendar.value ? Math.max(0, (currentCalendarDay() - 1) % 7) : 0));
   const weekDayName = computed(() => weekDays[weekDayIndex.value] ?? '一日');
   const isMarketDay = computed(() => weekDayIndex.value === 4);
   const currentTimeOfDay = computed(() => timeOfDayFromClock(calendar.clock) ?? calendar.timeOfDay);
   const shouldShowOpeningWorkshop = computed(
     () => openingWorkshopForced.value || (openingWorkshopEnabled.value && openingRequired.value && !openingCompleted.value),
   );
-  const dateText = computed(() => `共栖历 ${calendar.year} 年 · ${months[calendar.monthIndex]}（${seasonText.value}）第 ${calendar.day} 日 · ${weekDayName.value} · ${currentTimeOfDay.value}`);
+  const dateText = computed(() =>
+    hasReadableCalendar.value
+      ? `共栖历 ${calendar.year} 年 · ${months[calendar.monthIndex]}（${seasonText.value}）第 ${calendar.day} 日 · ${weekDayName.value} · ${currentTimeOfDay.value}`
+      : '未读取变量时间',
+  );
   const clockText = computed(() => calendar.clock);
   const lastTickAt = ref(Date.now());
-  const lastShopRefreshDay = ref(calendar.year * 12 * 30 + calendar.monthIndex * 30 + calendar.day);
+  const lastShopRefreshDay = ref(0);
 
   function currentCalendarDay() {
     return calendar.year * 12 * 30 + calendar.monthIndex * 30 + calendar.day;
@@ -1978,7 +2058,7 @@ export const useGameStore = defineStore('primordia', () => {
   }
 
   function currentMonthName() {
-    return months[calendar.monthIndex] ?? '绿涨月';
+    return months[calendar.monthIndex] ?? '';
   }
 
   function currentWeatherPool() {
@@ -2008,13 +2088,14 @@ export const useGameStore = defineStore('primordia', () => {
   }
 
   function clearWeatherForDay(serialDay = currentCalendarDay()) {
-    calendar.weather = '未设天气';
+    calendar.weather = '';
     calendar.weatherDescription = '';
     calendar.weatherIcon = 'sun';
     calendar.weatherDaySerial = serialDay;
   }
 
   function ensureWeatherForToday() {
+    if (!hasReadableCalendar.value) return;
     const today = currentCalendarDay();
     if (!weatherWorldbookLibrary.value) return;
     if (calendar.weatherDaySerial === today && calendar.weather && calendar.weatherDescription && calendar.weather !== '未设天气') return;
@@ -2022,6 +2103,7 @@ export const useGameStore = defineStore('primordia', () => {
   }
 
   function statDataWithCurrentCalendar(statData: PrimordiaStatData) {
+    if (!hasReadableCalendar.value) return clonePlainData(statData);
     const next = clonePlainData(statData);
     setPlainPath(next, '世界.当前历法.年', calendar.year);
     setPlainPath(next, '世界.当前历法.月份序号', calendar.monthIndex + 1);
@@ -2029,7 +2111,7 @@ export const useGameStore = defineStore('primordia', () => {
     setPlainPath(next, '世界.当前历法.季节', seasonText.value);
     setPlainPath(next, '世界.当前历法.日', calendar.day);
     setPlainPath(next, '世界.当前历法.天气', normalizeWeatherName(calendar.weather));
-    setPlainPath(next, '世界.当前历法.时间', normalizeClockText(calendar.clock, '00:00'));
+    setPlainPath(next, '世界.当前历法.时间', normalizeClockText(calendar.clock, ''));
     return next;
   }
 
@@ -2958,9 +3040,9 @@ export const useGameStore = defineStore('primordia', () => {
     return weatherOk || npcActivityOk;
   }
 
-  async function ensureTurnContextWorldbook() {
+  async function ensureTurnContextWorldbook(worldbookName = openingSave.value?.worldbookName || '') {
     try {
-      const binding = await ensureTurnContextWorldbookBinding(openingSave.value?.worldbookName || '');
+      const binding = await ensureTurnContextWorldbookBinding(worldbookName);
       turnContextWorldbookBinding.value = clonePlain(binding);
       turnContextWorldbookStatus.value = `本回合发送包条目已绑定：${binding.worldbookName} · uid ${binding.uid}`;
       if (openingSave.value) openingSave.value = { ...openingSave.value, turnContextWorldbookBinding: clonePlain(binding) };
@@ -3001,6 +3083,25 @@ export const useGameStore = defineStore('primordia', () => {
       await writeChatSave();
       return false;
     }
+  }
+
+  let startupWorldbookAutoBindStarted = false;
+  async function autoEnsureDefaultWorldbookBindings() {
+    if (startupWorldbookAutoBindStarted) return false;
+    const targetWorldbook = String(openingSave.value?.worldbookName || defaultOpeningWorldbookName() || '').trim();
+    if (!targetWorldbook) return false;
+    startupWorldbookAutoBindStarted = true;
+
+    let changed = false;
+    if (!turnContextWorldbookReady.value) {
+      changed = (await ensureTurnContextWorldbook(targetWorldbook)) || changed;
+    } else {
+      const valid = await refreshTurnContextWorldbookBinding();
+      if (!valid) changed = (await ensureTurnContextWorldbook(targetWorldbook)) || changed;
+    }
+
+    changed = (await ensureDefaultWorldbookModules(targetWorldbook)) || changed;
+    return changed;
   }
 
   function dayNumberFromValue(value: unknown, fallback?: number) {
@@ -3282,6 +3383,7 @@ export const useGameStore = defineStore('primordia', () => {
   const DEFAULT_BUSINESS_VISITOR_CHANCE = 30;
   const REGULAR_GUEST_REVISIT_CHANCE = 8;
   const DEFAULT_BUSINESS_GUEST_CAP = 12;
+  const DEFAULT_RUMOR_DAILY_CHANCE = 10;
   const BACKGROUND_FLOW_CLEANLINESS_CHANCE: Record<TavernRegion['condition'], number> = {
     崭新: 0.85,
     整洁: 0.75,
@@ -3292,19 +3394,63 @@ export const useGameStore = defineStore('primordia', () => {
     停用: 0,
     升级中: 0,
   };
-  const BACKGROUND_CUSTOMER_TEMPLATES = [
-    { name: '下工客人', prefers: ['热汤', '汤', '麦酒', '面包'], hint: '累了一天，话少，吃得快，不主动搭话' },
-    { name: '附近居民', prefers: ['热汤', '炖', '面包', '麦酒'], hint: '熟悉附近街道，简单吃喝后继续办自己的事' },
-    { name: '路过行商', prefers: ['面包', '麦酒', '酒', '便携'], hint: '只想歇脚，顺手买点能快速入口的东西' },
-    { name: '巡逻卫兵', prefers: ['麦酒', '热汤', '肉', '炖'], hint: '压低声音交谈，停留不久，不打扰店里的主要谈话' },
-    { name: '短暂停脚的旅人', prefers: ['热汤', '面包', '酒', '水'], hint: '带着路上的风尘，只想暖暖身子' },
-    { name: '本地老人', prefers: ['热汤', '粥', '软', '茶'], hint: '动作慢，坐得安静，吃完会把桌面收得很齐' },
-    { name: '学徒帮工', prefers: ['面包', '麦酒', '甜', '热汤'], hint: '钱不多，点得简单，坐在不起眼的位置' },
+  const BACKGROUND_BEHAVIOR_HINTS: Record<BackgroundBehaviorTag, string[]> = {
+    quiet: ['没有抬高声音，只让主厅多了些轻微人声', '坐下后不怎么打扰旁人', '存在感很低，像普通营业里的背景声'],
+    quick: ['吃得很快，没有多停留', '点单和结账都很利落', '几口吃完后便把位置让了出来'],
+    brief: ['停留时间不长，像只是顺路补一顿', '没有展开话题，很快回到自己的行程里', '坐了一小会儿便起身离开'],
+    simple: ['点得简单，没有提出额外要求', '只要了容易入口的东西', '挑了最省事的几样吃喝'],
+    corner: ['进门后先找了不挡路的位置', '坐在边角处，不占主厅中间的位置', '把随身物放得很靠里，没有碍着过道'],
+    counter: ['靠近柜台等了一会儿，拿到东西就回座位', '点单时说得很简短', '目光多停在柜台和菜单上'],
+    lowTalk: ['只低声交谈了几句', '同桌之间说话压得很低', '零散聊着自己的事，没有引开当前话题'],
+    priceAware: ['点单前多看了几眼价格', '几个人凑着点了够分的东西', '没有多花钱，点完就安静坐下'],
+    patient: ['等餐时很安静，没有催促', '坐得住，慢慢等着上桌', '对上菜速度没有表现出不满'],
+    tidy: ['吃完后把桌面收得很齐', '离开前顺手把餐具往桌边归了归', '没有留下太多需要收拾的痕迹'],
+    watchful: ['进门后先扫了一眼空位', '落座前短暂观察了一下店里', '不主动搭话，只偶尔看向主厅动静'],
+    takeaway: ['有一部分东西被打包带走', '点了能带走的吃食，停留得很短', '拿到吃食后没有久坐'],
+    slow: ['吃得不急，安静占着一小片桌面', '动作慢，但没有影响旁人', '坐得稳，像只是正常消磨一会儿'],
+    chatty: ['同桌间轻声聊个不停，但没有吵起来', '偶尔笑两声，很快又压低声音', '给主厅添了一点寻常热闹'],
+    direct: ['点单直接，没绕太多话', '说清要什么后便安静等着', '来意很简单，只是吃喝结账'],
+    routine: ['看起来像习惯这种普通店面流程', '进门、点单、落座都很自然', '没有特别举动，只是正常吃喝'],
+  };
+  const BACKGROUND_CUSTOMER_TEMPLATES: BackgroundCustomerTemplate[] = [
+    { name: '下工客人', prefers: ['热汤', '汤', '麦酒', '面包'], behaviorTags: ['quick', 'simple', 'quiet', 'lowTalk'], timeWeights: { 正午: 5, 午后: 6, 黄昏: 14, 入夜: 10, 深夜: 2 } },
+    { name: '附近居民', prefers: ['热汤', '炖', '面包', '麦酒'], behaviorTags: ['routine', 'simple', 'patient', 'tidy'], timeWeights: { 清晨: 6, 上午: 10, 正午: 11, 午后: 10, 黄昏: 8, 入夜: 5 } },
+    { name: '路过行商', prefers: ['面包', '麦酒', '酒', '便携'], behaviorTags: ['brief', 'direct', 'watchful', 'takeaway'], timeWeights: { 清晨: 5, 上午: 9, 正午: 12, 午后: 11, 黄昏: 9, 入夜: 4 } },
+    { name: '巡逻卫兵', prefers: ['麦酒', '热汤', '肉', '炖'], behaviorTags: ['lowTalk', 'brief', 'watchful', 'direct'], timeWeights: { 拂晓: 4, 清晨: 5, 正午: 7, 黄昏: 9, 入夜: 10, 深夜: 6 } },
+    { name: '短暂停脚的旅人', prefers: ['热汤', '面包', '酒', '水'], behaviorTags: ['brief', 'simple', 'corner', 'watchful'], timeWeights: { 拂晓: 5, 清晨: 8, 上午: 7, 正午: 8, 午后: 8, 黄昏: 9, 入夜: 6, 深夜: 3 } },
+    { name: '本地老人', prefers: ['热汤', '粥', '软', '茶'], behaviorTags: ['slow', 'quiet', 'tidy', 'patient'], timeWeights: { 清晨: 6, 上午: 10, 正午: 7, 午后: 10, 黄昏: 5, 入夜: 2 } },
+    { name: '学徒帮工', prefers: ['面包', '麦酒', '甜', '热汤'], behaviorTags: ['priceAware', 'simple', 'corner', 'quick'], timeWeights: { 清晨: 5, 上午: 7, 正午: 10, 午后: 8, 黄昏: 6, 入夜: 3 } },
+    { name: '赶路旅客', prefers: ['面包', '热汤', '水', '便携'], behaviorTags: ['brief', 'takeaway', 'direct', 'watchful'], timeWeights: { 拂晓: 7, 清晨: 10, 上午: 8, 正午: 7, 午后: 8, 黄昏: 7, 入夜: 5, 深夜: 2 } },
+    { name: '送货人', prefers: ['面包', '水', '热汤', '便携'], behaviorTags: ['quick', 'takeaway', 'direct', 'counter'], timeWeights: { 拂晓: 5, 清晨: 9, 上午: 10, 正午: 8, 午后: 8, 黄昏: 5, 入夜: 2 } },
+    { name: '跑腿人', prefers: ['面包', '甜', '水', '热汤'], behaviorTags: ['quick', 'counter', 'takeaway', 'brief'], timeWeights: { 清晨: 7, 上午: 11, 正午: 10, 午后: 9, 黄昏: 5, 入夜: 2 } },
+    { name: '等人的客人', prefers: ['茶', '麦酒', '热汤', '面包'], behaviorTags: ['patient', 'watchful', 'slow', 'corner'], timeWeights: { 上午: 7, 正午: 9, 午后: 11, 黄昏: 8, 入夜: 6, 深夜: 1 } },
+    { name: '独自用餐者', prefers: ['热汤', '面包', '麦酒', '茶'], behaviorTags: ['quiet', 'corner', 'simple', 'slow'], timeWeights: { 清晨: 5, 上午: 7, 正午: 10, 午后: 8, 黄昏: 9, 入夜: 8, 深夜: 3 } },
+    { name: '结伴用餐者', prefers: ['炖', '肉', '麦酒', '面包'], behaviorTags: ['chatty', 'lowTalk', 'routine', 'tidy'], timeWeights: { 正午: 12, 午后: 7, 黄昏: 12, 入夜: 9, 深夜: 2 } },
+    { name: '小本生意人', prefers: ['茶', '面包', '麦酒', '热汤'], behaviorTags: ['priceAware', 'lowTalk', 'patient', 'watchful'], timeWeights: { 上午: 10, 正午: 10, 午后: 11, 黄昏: 6, 入夜: 3 } },
+    { name: '看店伙计', prefers: ['面包', '热汤', '甜', '茶'], behaviorTags: ['quick', 'simple', 'priceAware', 'takeaway'], timeWeights: { 上午: 6, 正午: 12, 午后: 9, 黄昏: 5, 入夜: 2 } },
+    { name: '工坊工人', prefers: ['热汤', '麦酒', '肉', '面包'], behaviorTags: ['quick', 'simple', 'lowTalk', 'tidy'], timeWeights: { 正午: 8, 午后: 6, 黄昏: 13, 入夜: 8, 深夜: 2 } },
+    { name: '换班人员', prefers: ['热汤', '麦酒', '面包', '水'], behaviorTags: ['brief', 'direct', 'quiet', 'counter'], timeWeights: { 拂晓: 6, 清晨: 5, 正午: 5, 黄昏: 8, 入夜: 8, 深夜: 5 } },
+    { name: '匆忙客人', prefers: ['面包', '便携', '水', '热汤'], behaviorTags: ['quick', 'takeaway', 'direct', 'brief'], timeWeights: { 清晨: 8, 上午: 9, 正午: 10, 午后: 8, 黄昏: 7, 入夜: 4 } },
+    { name: '闲坐客人', prefers: ['茶', '麦酒', '软', '甜'], behaviorTags: ['slow', 'quiet', 'patient', 'corner'], timeWeights: { 上午: 5, 正午: 6, 午后: 12, 黄昏: 7, 入夜: 6, 深夜: 2 } },
+    { name: '拮据客人', prefers: ['面包', '热汤', '粥', '水'], behaviorTags: ['priceAware', 'simple', 'corner', 'quiet'], timeWeights: { 清晨: 5, 上午: 6, 正午: 9, 午后: 7, 黄昏: 8, 入夜: 5, 深夜: 2 } },
+    { name: '宽裕客人', prefers: ['肉', '酒', '炖', '甜'], behaviorTags: ['patient', 'routine', 'slow', 'direct'], timeWeights: { 正午: 7, 午后: 6, 黄昏: 9, 入夜: 10, 深夜: 2 } },
+    { name: '挑剔客人', prefers: ['炖', '肉', '茶', '酒'], behaviorTags: ['watchful', 'patient', 'slow', 'counter'], timeWeights: { 上午: 4, 正午: 7, 午后: 6, 黄昏: 6, 入夜: 5 } },
+    { name: '安静客人', prefers: ['茶', '热汤', '面包', '软'], behaviorTags: ['quiet', 'corner', 'patient', 'tidy'], timeWeights: { 清晨: 5, 上午: 8, 正午: 7, 午后: 9, 黄昏: 6, 入夜: 7, 深夜: 3 } },
+    { name: '问路客人', prefers: ['水', '面包', '热汤', '茶'], behaviorTags: ['brief', 'watchful', 'counter', 'direct'], timeWeights: { 拂晓: 4, 清晨: 8, 上午: 10, 正午: 8, 午后: 8, 黄昏: 5, 入夜: 3 } },
+    { name: '听消息的人', prefers: ['茶', '麦酒', '热汤', '面包'], behaviorTags: ['lowTalk', 'watchful', 'slow', 'corner'], timeWeights: { 上午: 5, 正午: 7, 午后: 10, 黄昏: 10, 入夜: 9, 深夜: 3 } },
+    { name: '轻装冒险者', prefers: ['肉', '麦酒', '热汤', '面包'], behaviorTags: ['direct', 'chatty', 'watchful', 'brief'], timeWeights: { 清晨: 5, 上午: 8, 正午: 10, 午后: 9, 黄昏: 9, 入夜: 6, 深夜: 2 } },
+    { name: '雇佣护卫', prefers: ['肉', '麦酒', '热汤', '炖'], behaviorTags: ['watchful', 'lowTalk', 'direct', 'brief'], timeWeights: { 清晨: 4, 上午: 6, 正午: 8, 午后: 8, 黄昏: 10, 入夜: 8, 深夜: 3 } },
+    { name: '采购杂役', prefers: ['面包', '便携', '水', '热汤'], behaviorTags: ['takeaway', 'priceAware', 'counter', 'quick'], timeWeights: { 清晨: 8, 上午: 11, 正午: 8, 午后: 8, 黄昏: 4, 入夜: 1 } },
+    { name: '搬运工人', prefers: ['热汤', '麦酒', '肉', '面包'], behaviorTags: ['quick', 'simple', 'lowTalk', 'brief'], timeWeights: { 清晨: 4, 上午: 7, 正午: 10, 午后: 7, 黄昏: 12, 入夜: 7, 深夜: 2 } },
+    { name: '普通酒客', prefers: ['麦酒', '酒', '肉', '炖'], behaviorTags: ['slow', 'chatty', 'routine', 'tidy'], timeWeights: { 正午: 3, 午后: 5, 黄昏: 10, 入夜: 13, 深夜: 5 } },
+    { name: '普通食客', prefers: ['热汤', '炖', '面包', '肉'], behaviorTags: ['routine', 'simple', 'patient', 'tidy'], timeWeights: { 清晨: 4, 上午: 7, 正午: 13, 午后: 8, 黄昏: 12, 入夜: 7, 深夜: 2 } },
+    { name: '门口观望的人', prefers: ['面包', '茶', '热汤', '水'], behaviorTags: ['watchful', 'brief', 'priceAware', 'counter'], timeWeights: { 上午: 5, 正午: 7, 午后: 8, 黄昏: 7, 入夜: 5, 深夜: 2 } },
   ];
   const isBusinessOpen = ref(false);
   const currentGuests = ref(0);
   const guestCap = ref(DEFAULT_BUSINESS_GUEST_CAP);
   const visitorChance = ref(DEFAULT_BUSINESS_VISITOR_CHANCE);
+  const rumorChance = ref(DEFAULT_RUMOR_DAILY_CHANCE);
   const lastVisitorSeed = ref('');
   const backgroundGroups = ref<BackgroundGuestGroup[]>([]);
   const lastBackgroundFlow = ref('');
@@ -3313,6 +3459,16 @@ export const useGameStore = defineStore('primordia', () => {
   const pendingRegularGuestUpdates = ref<RegularGuestUnit[]>([]);
   const rumorRecords = ref<RumorRecord[]>([]);
   const rumorDailyState = ref<RumorDailyState>({ dateKey: '', rolled: false, pending: false, used: false });
+  const characterVisitSchedulerEnabled = ref(localStorage.getItem('primordia.characterVisitSchedulerEnabled') !== 'false');
+  const characterVisitSchedulerState = ref<CharacterVisitSchedulerState>({
+    firstClosed: {},
+    firstClosedLogged: {},
+    weeklyRolls: {},
+    events: [],
+  });
+  watch(characterVisitSchedulerEnabled, value => {
+    localStorage.setItem('primordia.characterVisitSchedulerEnabled', String(value));
+  });
   const regularGuestBookWorldbookBinding = ref<WorldbookEntryRef | null>(null);
   const regularGuestBookWorldbookStatus = ref('常客簿世界书副本尚未同步。');
 
@@ -3755,6 +3911,7 @@ export const useGameStore = defineStore('primordia', () => {
       currentGuests: Math.max(0, Math.floor(currentGuests.value || 0)),
       guestCap: Math.max(1, Math.floor(guestCap.value || DEFAULT_BUSINESS_GUEST_CAP)),
       visitorChance: Math.max(0, Math.min(100, Math.floor(Number.isFinite(visitorChance.value) ? visitorChance.value : DEFAULT_BUSINESS_VISITOR_CHANCE))),
+      rumorChance: Math.max(0, Math.min(100, Math.floor(Number.isFinite(rumorChance.value) ? rumorChance.value : DEFAULT_RUMOR_DAILY_CHANCE))),
       lastVisitorSeed: lastVisitorSeed.value.trim(),
       backgroundGroups: clonePlain(backgroundGroups.value),
       lastBackgroundFlow: lastBackgroundFlow.value.trim(),
@@ -3773,6 +3930,8 @@ export const useGameStore = defineStore('primordia', () => {
           category,
           count: Math.max(1, Math.floor(Number(record.count) || 1)),
           unitPriceCopper: Math.max(0, Math.floor(Number(record.unitPriceCopper) || 0)),
+          unitLabel: String(record.unitLabel || '').trim() || '份',
+          portionBased: Boolean(record.portionBased),
         };
       })
       .filter(order => order.itemId && order.name && ['成品', '酒水'].includes(order.category) && order.unitPriceCopper > 0);
@@ -3798,6 +3957,7 @@ export const useGameStore = defineStore('primordia', () => {
   function normalizeBusinessState(source: unknown): TavernBusinessState {
     const record = asRecord(source);
     const rawVisitorChance = Number(record.visitorChance);
+    const rawRumorChance = Number(record.rumorChance);
     const normalizedBackgroundGroups = normalizeBackgroundGroups(record.backgroundGroups);
     const backgroundGuestCount = normalizedBackgroundGroups.reduce((sum, group) => sum + Math.max(0, Math.floor(group.count || 0)), 0);
     return {
@@ -3805,6 +3965,7 @@ export const useGameStore = defineStore('primordia', () => {
       guestCap: Math.max(1, Math.floor(Number(record.guestCap) || DEFAULT_BUSINESS_GUEST_CAP)),
       currentGuests: normalizedBackgroundGroups.length ? backgroundGuestCount : 0,
       visitorChance: Math.max(0, Math.min(100, Math.floor(Number.isFinite(rawVisitorChance) ? rawVisitorChance : DEFAULT_BUSINESS_VISITOR_CHANCE))),
+      rumorChance: Math.max(0, Math.min(100, Math.floor(Number.isFinite(rawRumorChance) ? rawRumorChance : DEFAULT_RUMOR_DAILY_CHANCE))),
       lastVisitorSeed: String(record.lastVisitorSeed || '').trim(),
       backgroundGroups: normalizedBackgroundGroups,
       lastBackgroundFlow: String(record.lastBackgroundFlow || '').trim(),
@@ -3934,7 +4095,6 @@ export const useGameStore = defineStore('primordia', () => {
     return true;
   }
 
-  const RUMOR_DAILY_CHANCE = 0.1;
   const MAX_RUMOR_RECORDS = 8;
   const rumorTypeLabels: RumorType[] = ['商机', '来访', '隐患', '奇闻', '人情', '秘会'];
 
@@ -3954,7 +4114,8 @@ export const useGameStore = defineStore('primordia', () => {
     const state = ensureRumorDailyState();
     if (!state.rolled) {
       state.rolled = true;
-      state.pending = Math.random() < RUMOR_DAILY_CHANCE;
+      const chance = Math.max(0, Math.min(100, Math.floor(Number.isFinite(rumorChance.value) ? rumorChance.value : DEFAULT_RUMOR_DAILY_CHANCE))) / 100;
+      state.pending = Math.random() < chance;
       state.used = false;
       void writeChatSave();
     }
@@ -4060,6 +4221,270 @@ export const useGameStore = defineStore('primordia', () => {
     };
   }
 
+  function normalizeCharacterVisitSchedulerState(source: unknown): CharacterVisitSchedulerState {
+    const record = asRecord(source);
+    const firstClosed = asRecord(record.firstClosed);
+    const firstClosedLogged = asRecord(record.firstClosedLogged);
+    const weeklyRollsRaw = asRecord(record.weeklyRolls);
+    const eventsRaw = Array.isArray(record.events) ? record.events : [];
+    return {
+      firstClosed: Object.fromEntries(Object.entries(firstClosed).map(([key, value]) => [key, Boolean(value)])),
+      firstClosedLogged: Object.fromEntries(Object.entries(firstClosedLogged).map(([key, value]) => [key, Boolean(value)])),
+      weeklyRolls: Object.fromEntries(
+        Object.entries(weeklyRollsRaw).map(([key, value]) => {
+          const item = asRecord(value);
+          return [key, {
+            weekKey: String(item.weekKey || ''),
+            dayIndexes: Array.isArray(item.dayIndexes)
+              ? item.dayIndexes.map(day => Math.floor(Number(day))).filter(day => day >= 0 && day <= 6)
+              : [],
+          }];
+        }),
+      ),
+      events: eventsRaw
+        .map((value, index) => {
+          const event = asRecord(value);
+          const kind = String(event.kind || '');
+          if (kind !== 'first' && kind !== 'arrival' && kind !== 'leave') return null;
+          const characterName = String(event.characterName || '').trim();
+          const prompt = String(event.prompt || '').trim();
+          const daySerial = Math.floor(Number(event.daySerial) || 0);
+          if (!characterName || !prompt || daySerial <= 0) return null;
+          return {
+            id: String(event.id || `visit-restored-${index}`),
+            characterName,
+            kind,
+            prompt,
+            daySerial,
+            ...(Number.isFinite(Number(event.dueMinute)) ? { dueMinute: Math.max(0, Math.min(24 * 60 - 1, Math.floor(Number(event.dueMinute)))) } : {}),
+            sent: Boolean(event.sent),
+          } satisfies CharacterVisitEvent;
+        })
+        .filter((event): event is CharacterVisitEvent => Boolean(event))
+        .slice(-120),
+    };
+  }
+
+  function characterVisitWeekKey() {
+    return String(Math.floor(Math.max(0, currentCalendarDay() - 1) / 7));
+  }
+
+  function characterVisitEventId(name: string, kind: CharacterVisitEventKind, daySerial = currentCalendarDay()) {
+    return `${name}:${kind}:${daySerial}`;
+  }
+
+  function hasKnownCharacter(name: string) {
+    const cleanName = name.trim();
+    if (!cleanName) return false;
+    if (heroines.value.some(heroine => heroine.name === cleanName || heroine.title === cleanName)) return true;
+    const statData = readMessageStatData();
+    if (!statData) return false;
+    const relationshipRoot = [
+      readRecordPath(statData, ['人物', '角色']),
+      readRecordPath(statData, ['人物羁绊', '人物关系', '角色羁绊']),
+    ].reduce<Record<string, any>>((merged, source) => {
+      Object.entries(source).forEach(([key, value]) => {
+        merged[key] = value;
+      });
+      return merged;
+    }, {});
+    return Object.prototype.hasOwnProperty.call(relationshipRoot, cleanName);
+  }
+
+  function closeKnownFirstVisitEvents() {
+    let changed = false;
+    ['绵暖', '阿黛拉'].forEach(name => {
+      if (characterVisitSchedulerState.value.firstClosed[name]) return;
+      if (!hasKnownCharacter(name)) return;
+      characterVisitSchedulerState.value.firstClosed[name] = true;
+      changed = true;
+      if (!characterVisitSchedulerState.value.firstClosedLogged[name]) {
+        characterVisitSchedulerState.value.firstClosedLogged[name] = true;
+        pushLog('系统', `${name}首次事件已关闭：变量中已存在该角色。`, {
+          source: 'engine',
+          authoritative: true,
+          tone: 'neutral',
+          actionType: 'CHARACTER_VISIT',
+        });
+      }
+    });
+    if (changed) markLocalStateDirty();
+    return changed;
+  }
+
+  function ensureWeeklyCharacterVisitRoll(key: string, candidateDayIndexes: number[], pickCount = 1) {
+    const weekKey = characterVisitWeekKey();
+    const stored = characterVisitSchedulerState.value.weeklyRolls[key];
+    if (stored?.weekKey === weekKey && stored.dayIndexes.length) return stored.dayIndexes;
+    const pool = [...candidateDayIndexes];
+    const picked: number[] = [];
+    while (pool.length && picked.length < pickCount) {
+      const index = Math.floor(Math.random() * pool.length);
+      const [day] = pool.splice(index, 1);
+      picked.push(day);
+    }
+    characterVisitSchedulerState.value.weeklyRolls[key] = { weekKey, dayIndexes: picked };
+    markLocalStateDirty();
+    return picked;
+  }
+
+  function upsertCharacterVisitEvent(event: Omit<CharacterVisitEvent, 'id' | 'daySerial' | 'sent'> & { daySerial?: number }) {
+    const daySerial = event.daySerial ?? currentCalendarDay();
+    const id = characterVisitEventId(event.characterName, event.kind, daySerial);
+    const existing = characterVisitSchedulerState.value.events.find(item => item.id === id);
+    if (existing) return existing;
+    const next: CharacterVisitEvent = { ...event, id, daySerial, sent: false };
+    characterVisitSchedulerState.value.events.push(next);
+    characterVisitSchedulerState.value.events = characterVisitSchedulerState.value.events
+      .filter(item => item.daySerial >= daySerial - 14)
+      .slice(-120);
+    markLocalStateDirty();
+    return next;
+  }
+
+  function heroineStage(name: string) {
+    return Math.max(0, Math.floor(Number(heroines.value.find(heroine => heroine.name === name || heroine.title === name)?.stage) || 0));
+  }
+
+  function isCharacterInTavern(name: string) {
+    const heroine = heroines.value.find(item => item.name === name || item.title === name);
+    return Boolean(heroine && resolveTavernNpcRegion(heroine.located));
+  }
+
+  function shouldAddMianuanKnownVisit(stage: number) {
+    if (stage >= 5) return true;
+    if (stage >= 4) return [3, 4, 5].includes(weekDayIndex.value);
+    if (stage >= 3) return weekDayIndex.value === 5 || ensureWeeklyCharacterVisitRoll('绵暖:stage3-extra', [0, 1, 2, 3, 4]).includes(weekDayIndex.value);
+    if (stage >= 2) return weekDayIndex.value === 5;
+    return false;
+  }
+
+  function shouldAddAdelaVisitFromMianuan() {
+    return heroineStage('绵暖') >= 6 && !isCharacterInTavern('绵暖');
+  }
+
+  function shouldAddAdelaKnownVisit(stage: number) {
+    if (stage < 3 || ![3, 4, 5].includes(weekDayIndex.value)) return false;
+    return ensureWeeklyCharacterVisitRoll('阿黛拉:stage3', [3, 4, 5], 1).includes(weekDayIndex.value);
+  }
+
+  function ensureCharacterVisitScheduleForToday() {
+    if (!characterVisitSchedulerEnabled.value || !hasReadableCalendar.value) return;
+    closeKnownFirstVisitEvents();
+    const today = currentCalendarDay();
+    const addKnownSchedule = (name: string, shouldVisit: boolean) => {
+      if (!hasKnownCharacter(name) || !shouldVisit) return;
+      upsertCharacterVisitEvent({ characterName: name, kind: 'arrival', prompt: `${name}今天来了。`, daySerial: today });
+      upsertCharacterVisitEvent({ characterName: name, kind: 'leave', prompt: `${name}需要回家了。`, daySerial: today });
+    };
+    if (!characterVisitSchedulerState.value.firstClosed['绵暖'] && weekDayIndex.value === 5 && isTavernSceneForBackgroundFlow()) {
+      upsertCharacterVisitEvent({ characterName: '绵暖', kind: 'first', prompt: '绵暖第一次来到酒馆。', daySerial: today });
+    }
+    if (!characterVisitSchedulerState.value.firstClosed['阿黛拉'] && shouldAddAdelaVisitFromMianuan()) {
+      upsertCharacterVisitEvent({ characterName: '阿黛拉', kind: 'first', prompt: '阿黛拉第一次来到酒馆。', daySerial: today, dueMinute: 9 * 60 });
+    }
+    addKnownSchedule('绵暖', shouldAddMianuanKnownVisit(heroineStage('绵暖')));
+    addKnownSchedule('阿黛拉', shouldAddAdelaKnownVisit(heroineStage('阿黛拉')));
+  }
+
+  function dueCharacterVisitEvents() {
+    if (!characterVisitSchedulerEnabled.value || !hasReadableCalendar.value) return [];
+    ensureCharacterVisitScheduleForToday();
+    const nowMinute = clockToMinutes(calendar.clock);
+    return characterVisitSchedulerState.value.events.filter(event => {
+      if (event.sent || event.daySerial !== currentCalendarDay()) return false;
+      if (event.kind === 'first') {
+        if (event.characterName === '阿黛拉' && (heroineStage('绵暖') < 6 || isCharacterInTavern('绵暖'))) return false;
+        return isTavernSceneForBackgroundFlow() && !hasKnownCharacter(event.characterName) && nowMinute >= (event.dueMinute ?? 0);
+      }
+      if (event.kind === 'arrival') {
+        if (event.characterName === '阿黛拉' && isCharacterInTavern('绵暖')) return false;
+        return isTavernSceneForBackgroundFlow() && nowMinute >= (event.dueMinute ?? 0) && nowMinute < 16 * 60;
+      }
+      if (event.kind === 'leave') return nowMinute >= 16 * 60 && isCharacterInTavern(event.characterName);
+      return false;
+    });
+  }
+
+  function formatCharacterVisitPromptBlock(events = dueCharacterVisitEvents()) {
+    if (!events.length) return '';
+    return [
+      '【本回合角色来访】',
+      ...events.map(event => `- ${event.prompt}`),
+      '这些是前端按日期、阶段和地点命中的短事实；请自然承接，不要把本段标题或规则说明写进正文。',
+    ].join('\n');
+  }
+
+  function appendCharacterVisitPromptBlock(prompt: string, events: CharacterVisitEvent[]) {
+    const block = formatCharacterVisitPromptBlock(events);
+    return block ? `${prompt}\n\n${block}` : prompt;
+  }
+
+  function summarizeFrontendTurnPlan(options: {
+    backgroundFlowPlan?: BackgroundFlowPlan | null;
+    businessVisitorPlan?: TavernBusinessVisitorPlan | null;
+    businessAgreementEvents?: DueBusinessAgreementEvent[];
+    characterVisitEvents?: CharacterVisitEvent[];
+    promiseMemos?: PromiseMemo[];
+  }) {
+    const lines: string[] = [];
+    const backgroundText = options.backgroundFlowPlan?.text?.trim();
+    if (backgroundText) lines.push(`普通客流：${backgroundText}`);
+
+    const visitorPlan = options.businessVisitorPlan;
+    if (visitorPlan?.regularGuest) lines.push(`常客回访：${visitorPlan.regularGuest.name}`);
+    if (visitorPlan?.seed) lines.push(`经营访客：${visitorPlan.seed.text}`);
+    if (visitorPlan?.shouldInject) {
+      lines.push(visitorPlan.rumorPending ? `近日听闻：触发，等待 AI 输出记录` : `近日听闻：未触发`);
+    }
+
+    const agreementEvents = (options.businessAgreementEvents ?? []).map(event => event.prompt).filter(Boolean);
+    if (agreementEvents.length) lines.push(`经营长期安排：${agreementEvents.join('、')}`);
+
+    const visitPrompts = (options.characterVisitEvents ?? []).map(event => event.prompt).filter(Boolean);
+    if (visitPrompts.length) lines.push(`角色来访：${visitPrompts.join('、')}`);
+
+    const promiseNames = (options.promiseMemos ?? []).map(memo => memo.name || memo.event || memo.reminder).filter(Boolean);
+    if (promiseNames.length) lines.push(`约定提醒：${promiseNames.join('、')}`);
+
+    return lines.length ? `本回合前端预定：${lines.join('；')}` : '';
+  }
+
+  function markCharacterVisitEventsSent(events: CharacterVisitEvent[], completedTurn: number) {
+    if (!events.length) return false;
+    const ids = new Set(events.map(event => event.id));
+    let changed = false;
+    characterVisitSchedulerState.value.events.forEach(event => {
+      if (!ids.has(event.id) || event.sent) return;
+      event.sent = true;
+      changed = true;
+      if (event.kind === 'first') characterVisitSchedulerState.value.firstClosed[event.characterName] = true;
+      pushLog('系统', `角色来访调度已触发：${event.prompt}`, {
+        source: 'engine',
+        authoritative: true,
+        tone: 'cyan',
+        actionType: 'CHARACTER_VISIT',
+      });
+    });
+    if (changed) {
+      markLocalStateDirty();
+      void writeChatSave();
+    }
+    return changed;
+  }
+
+  async function setCharacterVisitSchedulerEnabled(enabled: boolean) {
+    characterVisitSchedulerEnabled.value = enabled;
+    markLocalStateDirty();
+    await writeChatSave();
+    pushLog('系统', enabled ? '角色来访调度已开启。' : '角色来访调度已关闭。', {
+      source: 'engine',
+      authoritative: true,
+      tone: enabled ? 'cyan' : 'amber',
+      actionType: 'CHARACTER_VISIT',
+    });
+  }
+
   function pickRegularGuestForRevisit() {
     const list = regularGuests.value.filter(guest => guest.name.trim());
     if (!list.length) return null;
@@ -4132,8 +4557,30 @@ export const useGameStore = defineStore('primordia', () => {
     );
   }
 
-  function pickBackgroundTemplate() {
-    return BACKGROUND_CUSTOMER_TEMPLATES[Math.floor(Math.random() * BACKGROUND_CUSTOMER_TEMPLATES.length)] ?? BACKGROUND_CUSTOMER_TEMPLATES[0];
+  function pickWeightedBackgroundTemplate() {
+    const period = currentTimeOfDay.value || '正午';
+    const weighted = BACKGROUND_CUSTOMER_TEMPLATES
+      .map(template => ({
+        template,
+        weight: Math.max(0, template.timeWeights?.[period] ?? template.baseWeight ?? 5),
+      }))
+      .filter(entry => entry.weight > 0);
+    const candidates = weighted.length
+      ? weighted
+      : BACKGROUND_CUSTOMER_TEMPLATES.map(template => ({ template, weight: Math.max(1, template.baseWeight ?? 1) }));
+    const total = candidates.reduce((sum, entry) => sum + entry.weight, 0);
+    let roll = Math.random() * Math.max(1, total);
+    for (const entry of candidates) {
+      roll -= entry.weight;
+      if (roll <= 0) return entry.template;
+    }
+    return candidates[0]?.template ?? BACKGROUND_CUSTOMER_TEMPLATES[0];
+  }
+
+  function pickBackgroundBehaviorHint(template: BackgroundCustomerTemplate) {
+    const hints = template.behaviorTags.flatMap(tag => BACKGROUND_BEHAVIOR_HINTS[tag] ?? []);
+    if (!hints.length) return '只是普通吃喝，没有引开当前话题';
+    return hints[Math.floor(Math.random() * hints.length)] ?? hints[0];
   }
 
   function backgroundItemPreferenceScore(item: InventoryItem, prefers: string[]) {
@@ -4156,9 +4603,10 @@ export const useGameStore = defineStore('primordia', () => {
   }
 
   function buildBackgroundOrders(count: number, template: (typeof BACKGROUND_CUSTOMER_TEMPLATES)[number]) {
-    const remaining = new Map(saleableBackgroundItems().map(item => [item.id, Math.max(0, Math.floor(Number(item.qty) || 0))]));
+    const saleableItems = saleableBackgroundItems();
+    const remaining = new Map(saleableItems.map(item => [item.id, availablePortionsForItem(item)]));
     const orderMap = new Map<string, BackgroundOrder>();
-    const itemById = new Map(saleableBackgroundItems().map(item => [item.id, item]));
+    const itemById = new Map(saleableItems.map(item => [item.id, item]));
     for (let guestIndex = 0; guestIndex < count; guestIndex += 1) {
       const perGuestItems = Math.random() < 0.35 ? 2 : 1;
       for (let itemIndex = 0; itemIndex < perGuestItems; itemIndex += 1) {
@@ -4170,12 +4618,15 @@ export const useGameStore = defineStore('primordia', () => {
         const existed = orderMap.get(picked.id);
         if (existed) existed.count += 1;
         else {
+          const portionBased = portionsPerUnitForItem(picked) > 1;
           orderMap.set(picked.id, {
             itemId: picked.id,
             name: picked.name,
             category: picked.category,
             count: 1,
-            unitPriceCopper: salePriceForItem(picked),
+            unitPriceCopper: salePriceForPortion(picked),
+            unitLabel: inventoryPortionUnitForItem(picked) || '份',
+            portionBased,
           });
         }
       }
@@ -4184,7 +4635,7 @@ export const useGameStore = defineStore('primordia', () => {
   }
 
   function formatBackgroundOrders(orders: BackgroundOrder[]) {
-    return orders.map(order => `${order.name}${order.count > 1 ? `×${order.count}` : ''}`).join('、');
+    return orders.map(order => `${order.name}×${order.count}${order.unitLabel || '份'}`).join('、');
   }
 
   function nextBackgroundGroupId() {
@@ -4212,7 +4663,14 @@ export const useGameStore = defineStore('primordia', () => {
         leavingGroups,
         enteringGroup,
         incomeCopper: enteringGroup?.orders.reduce((sum, order) => sum + order.count * order.unitPriceCopper, 0) ?? 0,
-        inventoryDeltas: enteringGroup?.orders.map(order => ({ itemId: order.itemId, name: order.name, category: order.category, delta: -order.count })) ?? [],
+        inventoryDeltas: enteringGroup?.orders.map(order => ({
+          itemId: order.itemId,
+          name: order.name,
+          category: order.category,
+          delta: -order.count,
+          field: order.portionBased ? '当前剩余份数' : '数量',
+          unitLabel: order.unitLabel || '份',
+        })) ?? [],
         nextGroups,
         nextCurrentGuests: nextGroups.reduce((sum, group) => sum + Math.max(0, Math.floor(group.count || 0)), 0),
         text,
@@ -4236,9 +4694,10 @@ export const useGameStore = defineStore('primordia', () => {
     if (freeSeats <= 0) return basePlan('full', null, leavingText || '大厅暂时坐满，门口有人看了一眼便没有进来。', true);
     if (!saleableBackgroundItems().length) return basePlan('no_stock', null, leavingText || '有人在门口看了看，发现柜台没有可售的成品或酒水，很快又离开了。', true);
 
-    const template = pickBackgroundTemplate();
+    const template = pickWeightedBackgroundTemplate();
+    const behaviorHint = pickBackgroundBehaviorHint(template);
     const count = Math.max(1, Math.min(freeSeats, Math.floor(Math.random() * 4) + 1));
-    const totalSaleableQty = saleableBackgroundItems().reduce((sum, item) => sum + Math.max(0, Math.floor(Number(item.qty) || 0)), 0);
+    const totalSaleableQty = saleableBackgroundItems().reduce((sum, item) => sum + availablePortionsForItem(item), 0);
     if (totalSaleableQty < count) {
       return basePlan('soldout', null, leavingText || `${count}名${template.name}进门看了看，发现可售的成品或酒水不够，很快离开了。`, true);
     }
@@ -4252,21 +4711,29 @@ export const useGameStore = defineStore('primordia', () => {
       count,
       orders,
       remainingTurns: Math.floor(Math.random() * 3) + 1,
-      hint: template.hint,
+      hint: behaviorHint,
     };
-    const enteringText = `${count}名${template.name}进来，点了${formatBackgroundOrders(orders)}，${template.hint}。`;
+    const enteringText = `${count}名${template.name}进来，点了${formatBackgroundOrders(orders)}，${behaviorHint}。`;
     return basePlan('flow', enteringGroup, [leavingText, enteringText].filter(Boolean).join(' '), true);
   }
 
   function formatBusinessVisitorPlan(plan: TavernBusinessVisitorPlan | null) {
     if (!plan?.shouldInject) return '';
     const rumorPrompt = plan.rumorPending ? formatVisitorRumorPrompt() : '';
-    if (plan.regularGuest) return [formatRegularGuestRevisitPrompt(plan.regularGuest), rumorPrompt].filter(Boolean).join('\n\n');
+    const rumorRuleReminder = plan.rumorPending
+      ? [
+          '【规则提醒：近日听闻已触发】',
+          `本回合客人口信判定成功，当前设置触发率 ${rumorChance.value}%。`,
+          '请让这位互动访客自然带出一条可忽略、可追问的听闻，并按下方格式输出 <rumor_record>，否则前端“近日听闻”不会新增记录。',
+        ].join('\n')
+      : '';
+    if (plan.regularGuest) return [formatRegularGuestRevisitPrompt(plan.regularGuest), rumorRuleReminder, rumorPrompt].filter(Boolean).join('\n\n');
     if (!plan.seed) return '';
     if (rumorPrompt) {
       return [
         `酒馆门口新来的动静：${plan.seed.text}`,
         '如果这批客人实际进店、点单或留下需求，请在正文后追加 <guest_update> JSON 数组，供前端服务托盘记录。',
+        rumorRuleReminder,
         rumorPrompt,
       ].join('\n');
     }
@@ -4296,6 +4763,20 @@ export const useGameStore = defineStore('primordia', () => {
         actionType: 'BUSINESS_VISITOR',
       });
     }
+    if (plan.shouldInject) {
+      pushLog(
+        '系统',
+        plan.rumorPending
+          ? `近日听闻规则已触发 · 当前触发率 ${rumorChance.value}% · 等待 AI 输出 <rumor_record>`
+          : `近日听闻规则未触发 · 当前触发率 ${rumorChance.value}%`,
+        {
+          source: 'engine',
+          authoritative: true,
+          tone: plan.rumorPending ? 'cyan' : 'neutral',
+          actionType: 'RUMOR_RULE',
+        },
+      );
+    }
     markLocalStateDirty();
     return true;
   }
@@ -4303,7 +4784,7 @@ export const useGameStore = defineStore('primordia', () => {
   function formatBackgroundFlowPlan(plan: BackgroundFlowPlan | null) {
     if (!plan?.shouldInject || !plan.text.trim()) return '';
     const inventoryPatchExamples = plan.inventoryDeltas.map(delta =>
-      `  { "op": "delta", "path": "/库房/${delta.category}/${delta.name}/数量", "value": ${delta.delta} }`,
+      `  { "op": "delta", "path": "/库房/${delta.category}/${delta.name}/${delta.field}", "value": ${delta.delta} }`,
     );
     const moneyPatchExamples = plan.incomeCopper > 0
       ? [
@@ -4314,9 +4795,9 @@ export const useGameStore = defineStore('primordia', () => {
     const requiredPatchExamples = [...inventoryPatchExamples, ...moneyPatchExamples];
     const settlementRequests = [
       plan.inventoryDeltas.length
-        ? `【必须写变量补丁】普通客流已经卖出的库存必须扣减: ${plan.inventoryDeltas
-            .map(delta => `库房.${delta.category}.${delta.name}.数量 ${delta.delta}`)
-            .join('、')}。`
+        ? `【必须写变量补丁】普通客流已经卖出的是“份/杯/块”等单份，不是一整批库存；库存必须扣减: ${plan.inventoryDeltas
+            .map(delta => `库房.${delta.category}.${delta.name}.${delta.field} ${delta.delta}${delta.unitLabel}`)
+            .join('、')}。如果该物品没有“当前剩余份数”字段，才改扣“数量”。`
         : '',
       plan.incomeCopper > 0
         ? `【必须写变量补丁】普通客流收入必须进入钱匣: 酒馆.资金.钱匣.折算合计铜币 +${plan.incomeCopper}，酒馆.资金.折算合计铜币 +${plan.incomeCopper}。能换算五币种时，同步 replace 钱匣五币种和酒馆.资金顶层五币种；不会换算也不能漏掉折算合计铜币 delta。`
@@ -4405,6 +4886,13 @@ export const useGameStore = defineStore('primordia', () => {
   function setBusinessVisitorChance(value: number) {
     const next = Number(value);
     visitorChance.value = Math.max(0, Math.min(100, Math.floor(Number.isFinite(next) ? next : DEFAULT_BUSINESS_VISITOR_CHANCE)));
+    markLocalStateDirty();
+    void writeChatSave();
+  }
+
+  function setRumorChance(value: number) {
+    const next = Number(value);
+    rumorChance.value = Math.max(0, Math.min(100, Math.floor(Number.isFinite(next) ? next : DEFAULT_RUMOR_DAILY_CHANCE)));
     markLocalStateDirty();
     void writeChatSave();
   }
@@ -4567,9 +5055,12 @@ export const useGameStore = defineStore('primordia', () => {
       ? `今日日历事件:\n${todayCalendarEvents().map(event => `- ${event.name}`).join('\n')}`
       : '';
     const relationLine = relationshipStateSummary();
+    const calendarSummaryLine = hasReadableCalendar.value
+      ? `当前日期时间: ${calendar.year}年 ${currentMonthName()}（${seasonText.value}）第${calendar.day}日 · ${weekDayName.value}${isMarketDay.value ? '（集市日）' : ''} · ${currentTimeOfDay.value} · ${clockText.value}。`
+      : '当前日期时间: 未读取到正式变量时间。';
     return [
       '完整正式变量树已附加在本层消息 data/stat_data；库存、农田、人物与酒馆结构以 stat_data 为准。商铺货架只读取本层 <shop> 临时块，不写入长期变量。',
-      `当前日期时间: ${calendar.year}年 ${currentMonthName()}（${seasonText.value}）第${calendar.day}日 · ${weekDayName.value}${isMarketDay.value ? '（集市日）' : ''} · ${currentTimeOfDay.value} · ${clockText.value}。`,
+      calendarSummaryLine,
       isMarketDay.value
         ? '今日是市日：街坊、集市、摊位、临时货车与外来小贩更活跃；若本回合涉及采购或找店，商品来源与类型可以比平日更丰富。'
         : '',
@@ -4660,8 +5151,21 @@ export const useGameStore = defineStore('primordia', () => {
       '如果需要读档摘要，可以在最后输出 <sum>...</sum>，用1-2句话概括时间、地点、人物、事件。',
       '如本回合需要修改变量，可在正文后输出隐藏 <UpdateVariable> 或 <JSONPatch>；这些内容不得出现在 <maintext> 正文中。',
       '如果正文中产生未来承诺、预约、威胁、约好再见、某人说稍后回来等内容，请在正文后输出 <promise_update>...</promise_update> 严格 JSON 数组；trigger_time 必须换算成明确游戏时间 YYYY-MM-DD HH:mm，字段必须包含 action、name、trigger_time、people、event、reminder；不要写自然语言格式，不要把约定记录写进 <maintext>。',
-      '如果玩家本回合把库房物品用于明确的酒馆区域，并由此形成以后可以持续维持的区域状态，请输出 <tavern_state_update>[{"action":"add","name":"状态名","target_region":"现有区域名","description":"持续效果","guest_response_hint":"客人可能感受到的变化"}]</tavern_state_update>；一次性效果不要输出，物品与消耗量由前端采用本回合真实记录。',
-      '如果正文明确达成员工工资、房费、定期送货或副业收支约定，请输出 <business_agreement_update> 严格 JSON 数组；字段为 action、kind(wage/rent/delivery/sideBusiness)、name、counterparty、cashbox_delta_copper、inventory_changes、reminder。支出写负数，收入写正数；条件或金额不明确时不要创建。',
+      [
+        '如果玩家本回合通过前端“使用物品”把库房物品用于明确的酒馆区域，并由此形成以后可以持续维持的区域状态，请在正文后输出 <tavern_state_update> 严格 JSON 数组。',
+        '只在“可维护状态”成立时输出；一次性清洁、一次性装饰、没有明确区域、没有本回合物品消耗来源时不要输出。',
+        '如果这个状态每次补充物料后能维持多回合，请写 duration_turns（正整数），并让它与 <UpdateVariable>/<JSONPatch> 临时状态的 剩余回合 保持一致；不要把这类状态写成每回合消耗。',
+        '字段：action(add/update/remove)、name、target_region、duration_turns、description、guest_response_hint。target_region 必须使用现有酒馆区域名。',
+        '格式示例：<tavern_state_update>[{"action":"add","name":"壁炉香草熏香","target_region":"主厅接待区","duration_turns":4,"description":"补充一次木柴后，壁炉温暖和草木香会持续约4回合，降低客人等待时的不耐烦。","guest_response_hint":"客人进门后会更容易放松，愿意多坐一会儿。"}]</tavern_state_update>',
+      ].join('\n'),
+      [
+        '如果正文明确谈妥员工工资、房客房费、定期送货或副业收支，请在正文后输出 <business_agreement_update> 严格 JSON 数组。',
+        '字段：action(add/update/cancel)、kind(wage/rent/delivery/sideBusiness)、name、counterparty、cadence(daily/weekly)、cashbox_delta_copper、inventory_changes、reminder。',
+        'cashbox_delta_copper 是每次履行时进/出钱匣的铜币变化：酒馆付钱写负数，酒馆收钱写正数；inventory_changes 是每次履行时进/出库房的物品变化，数量增加写正数，消耗写负数。不要把每周约定平摊成每日约定；正文说每周就写 cadence:"weekly"。',
+        '条件、金额、频率或对象不明确时不要创建；只记录已经谈妥的长期约定，不记录一句随口承诺。',
+        '工资示例：<business_agreement_update>[{"action":"add","kind":"wage","name":"绵暖帮工日薪","counterparty":"绵暖","cadence":"daily","cashbox_delta_copper":-30,"inventory_changes":[],"reminder":"每日从钱匣支付绵暖帮工工资30铜。"}]</business_agreement_update>',
+        '送货示例：<business_agreement_update>[{"action":"add","kind":"delivery","name":"屠户巴克每周送肉","counterparty":"屠户巴克","cadence":"weekly","cashbox_delta_copper":-175,"inventory_changes":[{"name":"猪肉","category":"食材","qty":14,"tags":["肉类","红肉"]},{"name":"牛肉","category":"食材","qty":7,"tags":["肉类","红肉"]}],"reminder":"每周支付175铜，屠户巴克送来猪肉14份、牛肉7份入库。"}]</business_agreement_update>',
+      ].join('\n'),
       [
         '如果配角在某个酒馆区域学会、承担或表现出以后可反复做的后台小动作，请在正文后输出 <character_behavior_update>...</character_behavior_update> 严格 JSON 数组。',
         '这个块用于维护“每个配角自己的伪活人化行为池”：让不在主角当前镜头里的配角以后也能被前端随机安排事情做。',
@@ -4820,7 +5324,7 @@ export const useGameStore = defineStore('primordia', () => {
     const messageId = checkpoint?.messageId;
     if (messageId === undefined || messageId === null) return true;
 
-    const restoredVariables = await restoreStoryVariables(messageId);
+    const restoredVariables = restoreStorySnapshot(messageId) || await restoreStoryVariables(messageId);
     if (!restoredVariables) {
       pushLog('系统', `楼层 #${messageId} 的变量无法恢复，已停止从该层继续。`);
       return false;
@@ -4835,12 +5339,14 @@ export const useGameStore = defineStore('primordia', () => {
 
     // Deletion changes which message is "latest". Re-read the exact checkpoint
     // instead of allowing a latest-message fallback to revive the old branch.
-    const restoredAfterTruncate = await restoreStoryVariables(messageId);
+    const restoredAfterTruncate = restoreStorySnapshot(messageId) || await restoreStoryVariables(messageId);
     if (!restoredAfterTruncate) {
       pushLog('系统', `后续楼层已删除，但楼层 #${messageId} 的变量无法重新读取，已停止发送。`);
       return false;
     }
     loadedStoryCheckpoint.value = null;
+    localStateDirty.value = false;
+    await writeChatSave(checkpoint);
     return true;
   }
   function defaultLogMeta(kind: EngineLog['kind']): Pick<EngineLog, 'source' | 'authoritative' | 'tone'> {
@@ -5248,8 +5754,25 @@ export const useGameStore = defineStore('primordia', () => {
       ),
     };
     const changed = before !== JSON.stringify(temporaryStates.value);
-    if (changed) markLocalStateDirty();
-    return changed;
+    const remainingByMaintenanceId = new Map<string, number>();
+    flattenTemporaryStates().forEach(state => {
+      if (state.维持项ID) remainingByMaintenanceId.set(state.维持项ID, state.剩余回合);
+    });
+    let maintenanceChanged = false;
+    tavernMaintenance.value.forEach(entry => {
+      if (remainingByMaintenanceId.has(entry.id)) {
+        const remaining = remainingByMaintenanceId.get(entry.id) ?? 0;
+        if (entry.remainingTurns !== remaining) {
+          entry.remainingTurns = remaining;
+          maintenanceChanged = true;
+        }
+      } else if (entry.remainingTurns !== undefined) {
+        entry.remainingTurns = 0;
+        maintenanceChanged = true;
+      }
+    });
+    if (changed || maintenanceChanged) markLocalStateDirty();
+    return changed || maintenanceChanged;
   }
 
   function formatTemporaryStatePromptBlock() {
@@ -5498,13 +6021,26 @@ export const useGameStore = defineStore('primordia', () => {
     inventory.value = inventory.value.filter(item => item.qty > 0);
   }
 
+  function maintenanceDurationTurns(formula: Pick<TavernStateFormula, 'durationTurns'> | undefined) {
+    return Math.max(1, Math.min(99, Math.floor(Number(formula?.durationTurns) || 2)));
+  }
+
+  function findMaintainedTemporaryState(entry: TavernMaintenanceEntry, formula: TavernStateFormula) {
+    const preferred = temporaryStates.value.酒馆区域[formula.targetRegion] ?? [];
+    const direct = preferred.find(state => state.维持项ID === entry.id);
+    if (direct) return direct;
+    return Object.values(temporaryStates.value.酒馆区域).flatMap(list => list ?? []).find(state => state.维持项ID === entry.id);
+  }
+
   function upsertMaintainedTemporaryState(entry: TavernMaintenanceEntry, formula: TavernStateFormula) {
     const list = temporaryStates.value.酒馆区域[formula.targetRegion] ?? [];
-    const nextState: TemporaryState = { 名称: formula.name, 剩余回合: 2, 描述: formula.description, 来源物品: formula.requirements.map(item => item.name).join('、'), 维持项ID: entry.id };
+    const durationTurns = maintenanceDurationTurns(formula);
+    const nextState: TemporaryState = { 名称: formula.name, 剩余回合: durationTurns, 描述: formula.description, 来源物品: formula.requirements.map(item => item.name).join('、'), 维持项ID: entry.id };
     const index = list.findIndex(state => state.维持项ID === entry.id);
     if (index >= 0) list[index] = nextState;
     else list.push(nextState);
     temporaryStates.value.酒馆区域[formula.targetRegion] = list;
+    entry.remainingTurns = durationTurns;
   }
 
   function settleTavernMaintenance(turn: number) {
@@ -5515,6 +6051,15 @@ export const useGameStore = defineStore('primordia', () => {
       if (!formula) return;
       const recordId = `maintenance:${entry.id}:turn:${turn}`;
       if (businessSettlementRecords.value.some(record => record.id === recordId)) return;
+      const maintainedState = findMaintainedTemporaryState(entry, formula);
+      const remainingTurns = Math.max(0, Math.floor(Number(maintainedState?.剩余回合 ?? entry.remainingTurns) || 0));
+      if (remainingTurns > 0) {
+        entry.status = 'active';
+        entry.pauseReason = undefined;
+        entry.remainingTurns = remainingTurns;
+        entry.lastSettledTurn = turn;
+        return;
+      }
       const shortages = formula.requirements.map(requirement => {
         const stored = findInventoryForRecipeIngredient(requirement);
         return { requirement, stored, missing: Math.max(0, requirement.qty - (stored?.qty ?? 0)) };
@@ -5539,7 +6084,7 @@ export const useGameStore = defineStore('primordia', () => {
       entry.pauseReason = undefined;
       entry.lastSettledTurn = turn;
       upsertMaintainedTemporaryState(entry, formula);
-      const text = `${formula.targetRegion}的「${formula.name}」继续生效，消耗${formula.requirements.map(item => `${item.name}${item.qty}份`).join('、')}。`;
+      const text = `${formula.targetRegion}的「${formula.name}」继续生效，消耗${formula.requirements.map(item => `${item.name}${item.qty}份`).join('、')}，预计维持${maintenanceDurationTurns(formula)}回合。`;
       addSettlementRecord({ id: recordId, sourceType: 'maintenance', sourceId: entry.id, turn, daySerial: currentCalendarDay(), status: 'success', moneyDeltaCopper: 0, inventoryChanges: changes, text, createdAt: Date.now() });
       summaries.push(text);
     });
@@ -5553,16 +6098,137 @@ export const useGameStore = defineStore('primordia', () => {
     });
   }
 
+  function agreementCadenceIntervalDays(cadence: BusinessAgreement['cadence']) {
+    return cadence === 'weekly' ? 7 : 1;
+  }
+
+  function normalizeAgreementCadenceValue(value: unknown, fallbackText = ''): BusinessAgreement['cadence'] {
+    const text = `${String(value ?? '')} ${fallbackText}`.toLowerCase();
+    return /weekly|week|每周|一周|市日|周/.test(text) ? 'weekly' : 'daily';
+  }
+
+  function normalizeAgreementReminder(reminder: string, cadence: BusinessAgreement['cadence']) {
+    if (cadence !== 'weekly') return reminder.trim();
+    return reminder
+      .replace(/系统按每日平摊/g, '每周履行时')
+      .replace(/按每日平摊/g, '每周履行时')
+      .replace(/每日平均/g, '每周履行时')
+      .trim();
+  }
+
+  function normalizeAgreementEventRule(
+    value: unknown,
+    agreement: Pick<BusinessAgreement, 'kind' | 'name' | 'counterparty' | 'inventoryChanges'>,
+    previous?: BusinessAgreementEventRule,
+  ): BusinessAgreementEventRule | undefined {
+    const record = asRecord(value);
+    const hasExplicitRule = Object.keys(record).length > 0;
+    const defaultEnabled = agreement.kind === 'delivery';
+    const enabled = hasExplicitRule ? record.enabled !== false : (previous?.enabled ?? defaultEnabled);
+    if (!enabled && !previous?.prompt && !hasExplicitRule) return undefined;
+    const inventoryText = agreement.inventoryChanges.length
+      ? agreement.inventoryChanges.map(item => `${item.name}${item.qty > 0 ? `×${item.qty}` : ''}`).join('、')
+      : '约定物资';
+    const defaultPrompt =
+      agreement.kind === 'delivery'
+        ? `${agreement.counterparty}今天清晨来酒馆履行「${agreement.name}」，送来${inventoryText}。`
+        : '';
+    const prompt = String(record.prompt ?? previous?.prompt ?? defaultPrompt).trim();
+    if (!enabled && !prompt) return undefined;
+    const triggerTime = normalizeClockText(String(record.triggerTime ?? previous?.triggerTime ?? '07:00'), '07:00');
+    const scene = record.scene === 'any' || previous?.scene === 'any' ? 'any' : 'tavern';
+    const missedPolicyText = String(record.missedPolicy ?? previous?.missedPolicy ?? 'past');
+    const missedPolicy: BusinessAgreementEventRule['missedPolicy'] =
+      missedPolicyText === 'silent' || missedPolicyText === 'defer' ? missedPolicyText : 'past';
+    return {
+      enabled,
+      prompt,
+      triggerTime,
+      scene,
+      missedPolicy,
+      ...(Number.isFinite(Number(record.lastTriggeredDaySerial ?? previous?.lastTriggeredDaySerial))
+        ? { lastTriggeredDaySerial: Math.max(0, Math.floor(Number(record.lastTriggeredDaySerial ?? previous?.lastTriggeredDaySerial))) }
+        : {}),
+    };
+  }
+
+  interface DueBusinessAgreementEvent {
+    agreementId: string;
+    agreementName: string;
+    dueDaySerial: number;
+    prompt: string;
+    missedPolicy: BusinessAgreementEventRule['missedPolicy'];
+  }
+
+  function dueBusinessAgreementEvents() {
+    return [] as DueBusinessAgreementEvent[];
+    if (!hasReadableCalendar.value) return [] as DueBusinessAgreementEvent[];
+    const today = currentCalendarDay();
+    const nowMinute = clockToMinutes(calendar.clock);
+    return businessAgreements.value.flatMap(agreement => {
+      const rule = agreement.eventRule;
+      if (!agreement.enabled || !rule?.enabled || !rule.prompt.trim()) return [];
+      if (rule.scene === 'tavern' && !isTavernSceneForBackgroundFlow()) return [];
+      if (agreement.nextDueDaySerial > today) return [];
+      if ((rule.lastTriggeredDaySerial ?? 0) >= agreement.nextDueDaySerial) return [];
+      if (nowMinute < clockToMinutes(rule.triggerTime)) return [];
+      if (rule.missedPolicy === 'silent') return [];
+      return [{
+        agreementId: agreement.id,
+        agreementName: agreement.name,
+        dueDaySerial: agreement.nextDueDaySerial,
+        prompt: rule.missedPolicy === 'past' && today > agreement.nextDueDaySerial
+          ? `${rule.prompt}（这是此前到期的长期经营安排，请按已经发生过来承接。）`
+          : rule.prompt,
+        missedPolicy: rule.missedPolicy,
+      }];
+    });
+  }
+
+  function formatBusinessAgreementEventPromptBlock(events: DueBusinessAgreementEvent[]) {
+    if (!events.length) return '';
+    return [
+      '【本回合经营长期安排事件】',
+      ...events.map(event => `- ${event.prompt}`),
+      '这些是前端按长期经营安排、日期、时间和场景判定出的剧情提示；请自然承接，不要重复计算资金或库存。',
+    ].join('\n');
+  }
+
+  function appendBusinessAgreementEventPromptBlock(prompt: string, events: DueBusinessAgreementEvent[]) {
+    const block = formatBusinessAgreementEventPromptBlock(events);
+    return block ? `${prompt}\n\n${block}` : prompt;
+  }
+
+  function markBusinessAgreementEventsTriggered(events: DueBusinessAgreementEvent[]) {
+    if (!events.length) return false;
+    let changed = false;
+    events.forEach(event => {
+      const agreement = businessAgreements.value.find(item => item.id === event.agreementId);
+      if (!agreement?.eventRule) return;
+      agreement.eventRule.lastTriggeredDaySerial = Math.max(agreement.eventRule.lastTriggeredDaySerial ?? 0, event.dueDaySerial);
+      changed = true;
+      pushLog('系统', `经营长期安排事件已触发：${event.agreementName} · ${event.prompt}`, {
+        source: 'engine',
+        authoritative: true,
+        tone: 'cyan',
+        actionType: 'BUSINESS_AGREEMENT_EVENT',
+      });
+    });
+    if (changed) markLocalStateDirty();
+    return changed;
+  }
+
   function settleBusinessAgreements(turn: number) {
     const summaries: string[] = [];
     const today = currentCalendarDay();
     businessAgreements.value.forEach(agreement => {
       if (!agreement.enabled || agreement.nextDueDaySerial > today) return;
-      const dueDays = Math.max(1, today - agreement.nextDueDaySerial + 1);
+      const intervalDays = agreementCadenceIntervalDays(agreement.cadence);
+      const dueOccurrences = Math.floor(Math.max(0, today - agreement.nextDueDaySerial) / intervalDays) + 1;
       let successCount = 0;
       let skippedCount = 0;
-      for (let index = 0; index < dueDays; index += 1) {
-        const dueDay = agreement.nextDueDaySerial + index;
+      for (let index = 0; index < dueOccurrences; index += 1) {
+        const dueDay = agreement.nextDueDaySerial + index * intervalDays;
         const recordId = `agreement:${agreement.id}:day:${dueDay}`;
         if (businessSettlementRecords.value.some(record => record.id === recordId)) continue;
         const enoughMoney = agreement.cashboxDeltaCopper >= 0 || cashboxCopper.value >= Math.abs(agreement.cashboxDeltaCopper);
@@ -5578,7 +6244,7 @@ export const useGameStore = defineStore('primordia', () => {
         addSettlementRecord({ id: recordId, sourceType: 'agreement', sourceId: agreement.id, turn, daySerial: dueDay, status: 'success', moneyDeltaCopper: agreement.cashboxDeltaCopper, inventoryChanges: clonePlain(agreement.inventoryChanges), text: agreement.reminder, createdAt: Date.now() });
       }
       agreement.lastSettledDaySerial = today;
-      agreement.nextDueDaySerial = today + 1;
+      agreement.nextDueDaySerial += dueOccurrences * intervalDays;
       if (successCount) summaries.push(`${agreement.name}已履行${successCount > 1 ? `${successCount}次` : ''}：${agreement.reminder}`);
       if (skippedCount) summaries.push(`${agreement.name}有${skippedCount}次未履行，原因是资金或物资不足。`);
     });
@@ -5596,45 +6262,147 @@ export const useGameStore = defineStore('primordia', () => {
     return ['【本回合经营记录】', ...summaries.map(text => `- ${text}`), '请把这些经营变化自然融入场景，不要重复计算资金或库存，也不要在正文中复述本段标题。'].join('\n');
   }
 
+  function extractTurnCountFromText(text: string) {
+    const match = text.match(/(\d{1,2})\s*(?:个)?回合/);
+    if (!match) return undefined;
+    const value = Math.floor(Number(match[1]));
+    return value > 0 ? Math.min(99, value) : undefined;
+  }
+
+  function findTemporaryStateDurationForUpdate(
+    update: ParsedTavernStateUpdate,
+    targetRegion: string,
+    discovery: NonNullable<DraftAction['stateDiscovery']> | undefined,
+  ) {
+    const candidateLists = [
+      ...(temporaryStates.value.酒馆区域[targetRegion] ?? []),
+      ...Object.values(temporaryStates.value.酒馆区域).flatMap(list => list ?? []),
+    ];
+    let bestScore = 0;
+    let bestDuration = 0;
+    candidateLists.forEach(state => {
+      const duration = Math.floor(Number(state.剩余回合) || 0);
+      if (duration <= 0) return;
+      const text = `${state.名称} ${state.描述} ${state.来源物品 ?? ''}`;
+      let score = 0;
+      if (state.名称 === update.name) score += 4;
+      if (update.name && (text.includes(update.name) || update.name.includes(state.名称))) score += 2;
+      if (discovery?.itemName && text.includes(discovery.itemName)) score += 4;
+      if (update.description && state.描述 && (update.description.includes(state.描述) || state.描述.includes(discovery?.itemName ?? update.name))) score += 1;
+      if (score > bestScore) {
+        bestScore = score;
+        bestDuration = duration;
+      }
+    });
+    return bestScore >= 3 ? bestDuration : undefined;
+  }
+
+  function maintenanceDurationForUpdate(
+    update: ParsedTavernStateUpdate,
+    targetRegion: string,
+    discovery: NonNullable<DraftAction['stateDiscovery']> | undefined,
+    existing?: TavernStateFormula,
+  ) {
+    const explicit = Math.floor(Number(update.durationTurns) || 0);
+    if (explicit > 0) return Math.min(99, explicit);
+    const temporaryDuration = findTemporaryStateDurationForUpdate(update, targetRegion, discovery);
+    if (temporaryDuration) return temporaryDuration;
+    const textDuration = extractTurnCountFromText(`${update.name} ${update.description} ${update.guestResponseHint}`);
+    if (textDuration) return textDuration;
+    return maintenanceDurationTurns(existing);
+  }
+
+  function removeTavernStateFormulaAt(index: number) {
+    const [removed] = tavernStateFormulas.value.splice(index, 1);
+    if (!removed) return;
+    tavernMaintenance.value = tavernMaintenance.value.filter(item => item.formulaId !== removed.id);
+    Object.keys(temporaryStates.value.酒馆区域).forEach(regionName => {
+      temporaryStates.value.酒馆区域[regionName] = (temporaryStates.value.酒馆区域[regionName] ?? []).filter(
+        state => state.维持项ID !== `maint-${removed.id}`,
+      );
+    });
+  }
+
   function applyTavernStateUpdates(updates: ParsedTavernStateUpdate[] | undefined, discoveries: NonNullable<DraftAction['stateDiscovery']>[], turn: number) {
     if (!updates?.length) return false;
     let changed = false;
+    const normalizeRegionKey = (value: string) => normalizeScenePlaceName(value)
+      .replace(/^酒馆区域[:：]?/, '')
+      .replace(/接待区|区域|酒馆|大厅|大堂|主厅/g, '')
+      .trim();
+    const regionMatches = (left: string, right: string) => {
+      const leftScene = normalizeScenePlaceName(left);
+      const rightScene = normalizeScenePlaceName(right);
+      const leftKey = normalizeRegionKey(left);
+      const rightKey = normalizeRegionKey(right);
+      if (!leftKey || !rightKey) return leftScene === rightScene;
+      return leftKey === rightKey || leftScene.includes(rightScene) || rightScene.includes(leftScene);
+    };
     updates.forEach(update => {
-      const existingIndex = tavernStateFormulas.value.findIndex(item => item.id === update.id || (item.name === update.name && item.targetRegion === update.targetRegion));
+      const existingIndex = tavernStateFormulas.value.findIndex(
+        item =>
+          item.id === update.id ||
+          (item.name === update.name &&
+            (item.targetRegion === update.targetRegion ||
+              item.originalTargetRegion === update.targetRegion ||
+              regionMatches(item.targetRegion, update.targetRegion))),
+      );
       if (update.action === 'remove') {
         if (existingIndex < 0) return;
-        const [removed] = tavernStateFormulas.value.splice(existingIndex, 1);
-        tavernMaintenance.value = tavernMaintenance.value.filter(item => item.formulaId !== removed.id);
+        removeTavernStateFormulaAt(existingIndex);
         changed = true;
         return;
       }
-      const discovery = discoveries.find(item => item.targetRegion === update.targetRegion);
-      if (!discovery || !regions.value.some(region => region.name === discovery.targetRegion)) return;
+      const discovery = discoveries.find(item => regionMatches(item.targetRegion, update.targetRegion)) ?? (discoveries.length === 1 ? discoveries[0] : undefined);
+      const matchedRegion = discovery?.targetRegion ?? regions.value.find(region => regionMatches(region.name, update.targetRegion))?.name;
       const now = Date.now();
+      const existing = existingIndex >= 0 ? tavernStateFormulas.value[existingIndex] : undefined;
+      const targetRegion = matchedRegion || update.targetRegion;
+      const durationTurns = maintenanceDurationForUpdate(update, targetRegion, discovery, existing);
       const formula: TavernStateFormula = {
-        id: existingIndex >= 0 ? tavernStateFormulas.value[existingIndex].id : update.id || `state-${now}-${Math.random().toString(36).slice(2, 7)}`,
+        id: existing?.id ?? update.id ?? `state-${now}-${Math.random().toString(36).slice(2, 7)}`,
         name: update.name,
-        targetRegion: discovery.targetRegion,
-        requirements: [{ name: discovery.itemName, category: discovery.category, qty: discovery.qty, tags: clonePlain(discovery.tags) }],
+        targetRegion,
+        ...(matchedRegion && matchedRegion !== update.targetRegion ? { originalTargetRegion: update.targetRegion } : {}),
+        regionResolved: Boolean(matchedRegion),
+        requirements: discovery ? [{ name: discovery.itemName, category: discovery.category, qty: discovery.qty, tags: clonePlain(discovery.tags) }] : [],
+        durationTurns,
         description: update.description,
         guestResponseHint: update.guestResponseHint,
-        createdAt: existingIndex >= 0 ? tavernStateFormulas.value[existingIndex].createdAt : now,
+        createdAt: existing?.createdAt ?? now,
         updatedAt: now,
       };
       if (existingIndex >= 0) tavernStateFormulas.value[existingIndex] = formula;
       else tavernStateFormulas.value.unshift(formula);
       let maintenance = tavernMaintenance.value.find(item => item.formulaId === formula.id);
-      if (!maintenance) {
-        maintenance = { id: `maint-${formula.id}`, formulaId: formula.id, enabled: true, status: 'active', lastSettledTurn: turn };
+      if (formula.requirements.length) {
+        if (!maintenance) {
+          maintenance = { id: `maint-${formula.id}`, formulaId: formula.id, enabled: true, status: 'active', lastSettledTurn: turn, remainingTurns: durationTurns };
+          tavernMaintenance.value.unshift(maintenance);
+        } else {
+          maintenance.enabled = true;
+          maintenance.status = 'active';
+          maintenance.pauseReason = undefined;
+          maintenance.lastSettledTurn = turn;
+          maintenance.remainingTurns = durationTurns;
+        }
+        upsertMaintainedTemporaryState(maintenance, formula);
+      } else if (!maintenance) {
+        maintenance = {
+          id: `maint-${formula.id}`,
+          formulaId: formula.id,
+          enabled: false,
+          status: 'disabled',
+          lastSettledTurn: turn,
+          pauseReason: formula.requirements.length ? '临时效果由变量倒计时处理，未启用维护' : '等待确认区域或维护物品',
+        };
         tavernMaintenance.value.unshift(maintenance);
       } else {
-        maintenance.enabled = true;
-        maintenance.status = 'active';
-        maintenance.pauseReason = undefined;
-        maintenance.lastSettledTurn = turn;
+        maintenance.enabled = false;
+        maintenance.status = 'disabled';
+        maintenance.pauseReason = formula.requirements.length ? '临时效果由变量倒计时处理，未启用维护' : '等待确认区域或维护物品';
       }
-      upsertMaintainedTemporaryState(maintenance, formula);
-      pushLog('系统', `经营状态已收录 · ${formula.targetRegion} · ${formula.name}`, { source: 'ai', authoritative: false, tone: 'green', actionType: 'TAVERN_STATE_DISCOVERY' });
+      pushLog('系统', `经营状态已收录 · ${formula.targetRegion} · ${formula.name} · 已启用维护`, { source: 'ai', authoritative: false, tone: 'green', actionType: 'TAVERN_STATE_DISCOVERY' });
       changed = true;
     });
     return changed;
@@ -5650,16 +6418,25 @@ export const useGameStore = defineStore('primordia', () => {
         changed ||= index >= 0;
         return;
       }
+      const cadence = normalizeAgreementCadenceValue(update.cadence, `${update.name} ${update.reminder}`);
+      const inventoryChanges = update.inventoryChanges.map(item => ({ ...item, category: normalizeInventoryCategory(item.category) }));
+      const eventRule = normalizeAgreementEventRule(update.eventRule, {
+        kind: update.kind,
+        name: update.name,
+        counterparty: update.counterparty,
+        inventoryChanges,
+      }, index >= 0 ? businessAgreements.value[index].eventRule : undefined);
       const next: BusinessAgreement = {
         id: index >= 0 ? businessAgreements.value[index].id : update.id || `agreement-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         kind: update.kind,
         name: update.name,
         counterparty: update.counterparty,
         enabled: true,
-        cadence: 'daily',
+        cadence,
         cashboxDeltaCopper: update.cashboxDeltaCopper,
-        inventoryChanges: update.inventoryChanges.map(item => ({ ...item, category: normalizeInventoryCategory(item.category) })),
-        reminder: update.reminder,
+        inventoryChanges,
+        reminder: normalizeAgreementReminder(update.reminder, cadence),
+        ...(eventRule ? { eventRule } : {}),
         nextDueDaySerial: index >= 0 ? businessAgreements.value[index].nextDueDaySerial : currentCalendarDay() + 1,
         ...(index >= 0 && businessAgreements.value[index].lastSettledDaySerial !== undefined ? { lastSettledDaySerial: businessAgreements.value[index].lastSettledDaySerial } : {}),
       };
@@ -5674,9 +6451,38 @@ export const useGameStore = defineStore('primordia', () => {
   function setMaintenanceEnabled(id: string, enabled: boolean) {
     const entry = tavernMaintenance.value.find(item => item.id === id);
     if (!entry) return;
+    const formula = tavernStateFormulas.value.find(item => item.id === entry.formulaId);
+    if (enabled && !formula?.requirements.length) {
+      entry.enabled = false;
+      entry.status = 'disabled';
+      entry.pauseReason = '等待确认维护物品';
+      markLocalStateDirty();
+      void writeChatSave();
+      return;
+    }
     entry.enabled = enabled;
     entry.status = enabled ? 'active' : 'disabled';
     entry.pauseReason = undefined;
+    if (enabled && formula?.requirements.length) upsertMaintainedTemporaryState(entry, formula);
+    else entry.remainingTurns = undefined;
+    markLocalStateDirty();
+    void writeChatSave();
+  }
+
+  function setTavernStateFormulaRegion(id: string, targetRegion: string) {
+    const formula = tavernStateFormulas.value.find(item => item.id === id);
+    const region = regions.value.find(item => item.name === targetRegion);
+    if (!formula || !region) return;
+    const maintenance = tavernMaintenance.value.find(item => item.formulaId === formula.id);
+    if (maintenance) {
+      Object.keys(temporaryStates.value.酒馆区域).forEach(regionName => {
+        temporaryStates.value.酒馆区域[regionName] = (temporaryStates.value.酒馆区域[regionName] ?? []).filter(state => state.维持项ID !== maintenance.id);
+      });
+    }
+    formula.targetRegion = region.name;
+    formula.regionResolved = true;
+    formula.updatedAt = Date.now();
+    if (maintenance && maintenance.enabled && formula.requirements.length) upsertMaintainedTemporaryState(maintenance, formula);
     markLocalStateDirty();
     void writeChatSave();
   }
@@ -5685,6 +6491,17 @@ export const useGameStore = defineStore('primordia', () => {
     const agreement = businessAgreements.value.find(item => item.id === id);
     if (!agreement) return;
     agreement.enabled = enabled;
+    markLocalStateDirty();
+    void writeChatSave();
+  }
+
+  function updateBusinessAgreementEventRule(id: string, patch: Partial<BusinessAgreementEventRule>) {
+    const agreement = businessAgreements.value.find(item => item.id === id);
+    if (!agreement) return;
+    const current = normalizeAgreementEventRule(agreement.eventRule, agreement);
+    const next = normalizeAgreementEventRule({ ...(current ?? {}), ...patch }, agreement, current);
+    if (next) agreement.eventRule = next;
+    else delete agreement.eventRule;
     markLocalStateDirty();
     void writeChatSave();
   }
@@ -5831,13 +6648,17 @@ export const useGameStore = defineStore('primordia', () => {
         } satisfies RecipeIngredient;
       })
       .filter((item): item is RecipeIngredient => item !== null);
-    if (!name || !targetRegion || !requirements.length) return null;
+    if (!name || !targetRegion) return null;
     const now = Date.now();
+    const originalTargetRegion = String(record.originalTargetRegion ?? '').trim();
     return {
       id: String(record.id || `state-${now}-${Math.random().toString(36).slice(2, 7)}`),
       name,
       targetRegion,
+      ...(originalTargetRegion ? { originalTargetRegion } : {}),
+      regionResolved: record.regionResolved !== false,
       requirements,
+      durationTurns: Math.max(1, Math.min(99, Math.floor(Number(record.durationTurns) || Number(record.duration_turns) || 2))),
       description: String(record.description || name).trim(),
       guestResponseHint: String(record.guestResponseHint || '').trim(),
       createdAt: Math.floor(Number(record.createdAt) || now),
@@ -5872,6 +6693,7 @@ export const useGameStore = defineStore('primordia', () => {
         enabled,
         status: enabled ? (statusText === 'shortage' ? 'shortage' : 'active') : 'disabled',
         ...(Number.isFinite(Number(record.lastSettledTurn)) ? { lastSettledTurn: Math.max(0, Math.floor(Number(record.lastSettledTurn))) } : {}),
+        ...(Number.isFinite(Number(record.remainingTurns)) ? { remainingTurns: Math.max(0, Math.floor(Number(record.remainingTurns))) } : {}),
         ...(record.pauseReason ? { pauseReason: String(record.pauseReason) } : {}),
       } satisfies TavernMaintenanceEntry;
     }).filter((item): item is TavernMaintenanceEntry => item !== null);
@@ -5886,6 +6708,7 @@ export const useGameStore = defineStore('primordia', () => {
       if (!name || !counterparty) return null;
       const kindText = String(record.kind || 'wage');
       const kind: BusinessAgreement['kind'] = kindText === 'rent' || kindText === 'delivery' || kindText === 'sideBusiness' ? kindText : 'wage';
+      const cadence = normalizeAgreementCadenceValue(record.cadence, `${name} ${String(record.reminder || '')}`);
       const inventoryChanges = (Array.isArray(record.inventoryChanges) ? record.inventoryChanges : []).map(change => {
         const source = asRecord(change);
         return {
@@ -5895,16 +6718,18 @@ export const useGameStore = defineStore('primordia', () => {
           tags: Array.isArray(source.tags) ? source.tags.map(String).filter(Boolean) : [],
         };
       }).filter(change => change.name && change.qty !== 0);
+      const eventRule = normalizeAgreementEventRule(record.eventRule, { kind, name, counterparty, inventoryChanges });
       return {
         id: String(record.id || `agreement-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`),
         kind,
         name,
         counterparty,
         enabled: record.enabled !== false,
-        cadence: 'daily',
+        cadence,
         cashboxDeltaCopper: Math.trunc(Number(record.cashboxDeltaCopper) || 0),
         inventoryChanges,
-        reminder: String(record.reminder || name).trim(),
+        reminder: normalizeAgreementReminder(String(record.reminder || name), cadence),
+        ...(eventRule ? { eventRule } : {}),
         nextDueDaySerial: Math.max(0, Math.floor(Number(record.nextDueDaySerial) || currentCalendarDay() + 1)),
         ...(Number.isFinite(Number(record.lastSettledDaySerial)) ? { lastSettledDaySerial: Math.max(0, Math.floor(Number(record.lastSettledDaySerial))) } : {}),
       } satisfies BusinessAgreement;
@@ -6644,17 +7469,20 @@ export const useGameStore = defineStore('primordia', () => {
       message: `已使用「${item.name}」。`,
       shouldAskAI: true,
       summary: `${item.name}×${consumed.qty}`,
-      narrativeFact: `当前位置为「${currentSceneLabel()}」。玩家从${itemSourceLabel(source)}使用「${item.name}」×${consumed.qty}，目标是「${target}」。前端已完成结算：对应物品数量已减少。${note ? `玩家补充意图：${note}` : ''}`,
+      narrativeFact: `当前位置为「${currentSceneLabel()}」。玩家从${itemSourceLabel(source)}使用「${item.name}」×${consumed.qty}，目标是「${targetLabel}」。${note ? `玩家补充意图：${note}` : ''}`,
       aiHint: [
         '请承接上一楼层，叙述使用物品的动作、感受和现场反应。',
         '如果该物品产生明确短期影响，请在 <UpdateVariable> 的 <JSONPatch> 中插入临时状态。',
         '临时状态只使用字段: 名称、剩余回合、描述、来源物品。',
         '剩余回合表示从当前回合开始还能持续几个叙事回合，必须写正整数；回合结束后的倒计时由前端自动处理，不要手动给已有状态减回合。',
         `本次目标建议路径: ${targetPath}`,
+        target.startsWith('酒馆区域：')
+          ? `如果该物品让 "${targetLabel}" 形成以后可以继续补料维持的经营状态，请输出 <tavern_state_update>，target_region 请优先写 "${targetLabel}"；若补一次能持续多回合，必须写 duration_turns，并与临时状态的 剩余回合 一致。`
+          : '',
         `示例: { "op": "insert", "path": "${targetPath}", "value": { "名称": "力大如牛", "剩余回合": 3, "描述": "${targetLabel}短时间内力量明显增强。", "来源物品": "${item.name}" } }`,
         '可写入路径: /临时状态/主角/-、/临时状态/酒馆/-、/临时状态/酒馆区域/区域名/-、/临时状态/人物/人物名/-。',
         '普通吃喝、试用或没有持续影响时，可以只叙事，不必强行生成状态。',
-      ].join('\n'),
+      ].filter(Boolean).join('\n'),
     };
   }
 
@@ -6806,7 +7634,7 @@ export const useGameStore = defineStore('primordia', () => {
         monthIndex: calendar.monthIndex,
         day: calendar.day,
         timeOfDay: calendar.timeOfDay,
-        clock: normalizeClockText(calendar.clock, '00:00'),
+        clock: normalizeClockText(calendar.clock, ''),
         weather: calendar.weather,
         weatherIcon: calendar.weatherIcon,
         weatherDescription: calendar.weatherDescription,
@@ -6857,6 +7685,8 @@ export const useGameStore = defineStore('primordia', () => {
       businessSettlementRecords: clonePlain(businessSettlementRecords.value),
       rumorRecords: clonePlain(rumorRecords.value),
       rumorDailyState: clonePlain(rumorDailyState.value),
+      characterVisitSchedulerEnabled: characterVisitSchedulerEnabled.value,
+      characterVisitSchedulerState: clonePlain(characterVisitSchedulerState.value),
       generatedShop: generatedShop.value ? clonePlain(generatedShop.value) : null,
       generatedShopProducts: clonePlain(generatedShopProducts.value),
       farmPlots: clonePlain(farmPlots.value),
@@ -6892,6 +7722,7 @@ export const useGameStore = defineStore('primordia', () => {
     isBusinessOpen.value = business.isOpen;
     guestCap.value = business.guestCap;
     visitorChance.value = business.visitorChance;
+    rumorChance.value = business.rumorChance;
     currentGuests.value = Math.min(business.currentGuests, business.guestCap);
     lastVisitorSeed.value = business.lastVisitorSeed;
     backgroundGroups.value = normalizeBackgroundGroups(business.backgroundGroups);
@@ -6932,6 +7763,8 @@ export const useGameStore = defineStore('primordia', () => {
     businessSettlementRecords.value = normalizeSettlementRecords(snapshot.businessSettlementRecords);
     rumorRecords.value = normalizeRumorRecords(snapshot.rumorRecords);
     rumorDailyState.value = normalizeRumorDailyState(snapshot.rumorDailyState);
+    characterVisitSchedulerEnabled.value = Boolean(snapshot.characterVisitSchedulerEnabled);
+    characterVisitSchedulerState.value = normalizeCharacterVisitSchedulerState(snapshot.characterVisitSchedulerState);
     generatedShop.value = snapshot.generatedShop ? clonePlain(snapshot.generatedShop) : null;
     generatedShopProducts.value = clonePlain(snapshot.generatedShopProducts);
     farmPlots.value = clonePlain(snapshot.farmPlots);
@@ -7641,325 +8474,12 @@ export const useGameStore = defineStore('primordia', () => {
 
   function buildFrontendMvuSnapshot(lastActionSummary = ''): PrimordiaStatData {
     void lastActionSummary;
-    ensureWeatherForToday();
-    const reputationSnapshot = reputationMvuSnapshot();
-    const cookingTitles = ['烧火工', '守灶童', '灶台学徒', '行炉工', '持勺匠', '灶台师傅', '首席灶师', '灶火宗师'];
-    const makeMoneySnapshot = (value: number) => {
-      const parts = copperToParts(value);
-      return {
-        铜币: parts.copper,
-        银币: parts.silver,
-        金币: parts.gold,
-        铂金币: parts.platinum,
-        秘银币: parts.mithril,
-        折算合计铜币: value,
-      };
-    };
-    const makeInventorySnapshot = (items: InventoryItem[]) => {
-      const out: Record<InventoryItem['category'], Record<string, any>> = {
-        食材: {},
-        调料: {},
-        成品: {},
-        酒水: {},
-        杂物: {},
-        日用品: {},
-      };
-      items.forEach(item => {
-        const units = inventoryUnitsFor(item);
-        const entry: Record<string, any> = {
-          数量: item.qty,
-          每件份数: item.portionsPerUnit ?? 1,
-          当前剩余份数: item.remainingPortions ?? item.portionsPerUnit ?? 1,
-          单位: item.unit ?? units.unit,
-          份数单位: item.portionUnit ?? units.portionUnit,
-          标签: item.tags,
-        };
-        if (item.batch) entry.批次 = item.batch;
-        if (item.baseName) entry.基础名称 = item.baseName;
-        entry.价格折合铜币 = item.priceCopper ?? 0;
-        if (item.category === '成品' || item.category === '酒水') entry.搭配判定 = item.quality ?? '无冲突';
-        if (item.desc) entry.备注 = item.desc;
-        out[item.category][item.name] = entry;
-      });
-      return out;
-    };
-    const storage: Record<InventoryItem['category'], Record<string, any>> = {
-      食材: {},
-      调料: {},
-      成品: {},
-      酒水: {},
-      杂物: {},
-      日用品: {},
-    };
-    inventory.value.forEach(item => {
-      const units = inventoryUnitsFor(item);
-      const entry: Record<string, any> = {
-        数量: item.qty,
-        每件份数: item.portionsPerUnit ?? 1,
-        当前剩余份数: item.remainingPortions ?? item.portionsPerUnit ?? 1,
-        单位: item.unit ?? units.unit,
-        份数单位: item.portionUnit ?? units.portionUnit,
-        标签: item.tags,
-      };
-      if (item.batch) entry.批次 = item.batch;
-      if (item.baseName) entry.基础名称 = item.baseName;
-      entry.价格折合铜币 = item.priceCopper ?? 0;
-      if (item.category === '成品' || item.category === '酒水') entry.搭配判定 = item.quality ?? '无冲突';
-      storage[item.category][item.name] = entry;
-    });
-
-    const regionSnapshot = Object.fromEntries(
-      regions.value.filter(region => region.id !== 'rooms').map(region => [
-        region.name,
-        {
-          状态: region.condition,
-          状态原因: region.conditionReason ?? '',
-          风格: region.style,
-          描述: region.description,
-          分配员工: region.staff ?? '',
-          设施: Object.fromEntries(
-            region.facilities.map(facility => [
-              facility.name,
-              {
-                状态: facility.condition,
-                风格: facility.style,
-                描述: facility.description,
-                价格折合铜币: facility.priceCopper ?? 0,
-              },
-            ]),
-          ),
-        },
-      ]),
-    );
-    const roomSnapshot = Object.fromEntries(
-      regions.value.flatMap(region =>
-        (region.rooms ?? []).map(room => [
-          room.name,
-          {
-            所属区域: region.name,
-            类型: room.type,
-            住客: room.guest ?? '',
-            价格折合铜币: room.priceCopper,
-            价格描述: room.priceText ?? '',
-            舒适: room.comfort,
-            舒适描述: room.comfortText ?? '',
-            私密: room.privacy,
-            私密描述: room.privacyText ?? '',
-            清洁: room.cleanliness,
-            清洁状态: room.cleanlinessText ?? '',
-            清洁原因: room.cleanlinessReason ?? '',
-            设施: Object.fromEntries(
-              room.facilities.map(facility => [
-                facility.name,
-                {
-                  状态: facility.condition,
-                  风格: facility.style,
-                  描述: facility.description,
-                  价格折合铜币: facility.priceCopper ?? 0,
-                },
-              ]),
-            ),
-          },
-        ]),
-      ),
-    );
-
-    const relationshipSnapshot = Object.fromEntries(
-      heroines.value.map(heroine => [
-        heroine.name,
-        {
-          种族: heroine.race,
-          身份: heroine.title,
-          羁绊阶段: heroine.stage,
-          阶段文字: heroine.stageName,
-          阶段列表: heroine.stageNames ?? stageNames,
-          好感: heroine.affection,
-          心情: heroine.mood,
-          所在位置: heroine.located,
-          一句话穿着: heroine.outfit || '',
-          生命: { 当前值: heroine.hp, 上限: heroine.hpMax },
-          精力: { 当前值: heroine.energy, 上限: heroine.energyMax },
-          膀胱: { 当前值: heroine.bladder, 上限: heroine.bladderMax },
-          个人资金: moneyBucketFromCopper(heroine.personalFundsCopper ?? 0),
-          收入: heroine.income ?? { 职业: heroine.title, 日收入折合铜币: 0, 结算方式: '', 备注: '' },
-          备注: heroine.bio,
-        },
-      ]),
-    );
-
-    const farmSnapshot = Object.fromEntries(
-      farmPlots.value.map(plot => [
-        `第${plot.id.replace(/^f-/, '')}号畦`,
-        {
-          作物: plot.crop === '空畦' ? '' : plot.crop,
-          状态: plot.crop === '空畦' ? '空畦' : plot.season,
-          阶段: plot.stage,
-          阶段上限: plot.stageMax,
-          预计产出: plot.expectedHarvest,
-          播种日: plot.plantedDay ?? '',
-          成熟日: plot.matureDay ?? '',
-          批次标签: plot.batchTags ?? [],
-        },
-      ]),
-    );
-
-    const brewSnapshot = Object.fromEntries(
-      brews.value.map(barrel => [
-        barrel.name,
-        {
-          状态: barrel.filling,
-          内容物: barrel.name,
-          类型: barrel.brewType ?? '酒水',
-          酿造开始日: barrel.startedDay,
-          收获日: barrel.matureDay,
-          预计产出: barrel.expected,
-        },
-      ]),
-    );
-    return {
-      世界: {
-        时代: openingSave.value?.era ?? '共栖历1303年',
-        地区: openingSave.value?.region ?? '韦斯托利亚',
-        当前历法: {
-          年: calendar.year,
-          月份序号: calendar.monthIndex + 1,
-          月份名: months[calendar.monthIndex] ?? '',
-          季节: seasonText.value,
-          日: calendar.day,
-          天气: normalizeWeatherName(calendar.weather),
-          时间: normalizeClockText(calendar.clock, '00:00'),
-        },
-        当前地点: {
-          区域: location.region,
-          具体位置: location.place,
-        },
-      },
-      主角: {
-        姓名: protagonist.name,
-        种族: protagonist.race,
-        称号: protagonist.title,
-        当前状态: protagonist.mood,
-        一句话穿着: protagonist.outfit,
-        生命: { 当前值: protagonist.hp, 上限: protagonist.hpMax },
-        精力: { 当前值: energy.value, 上限: energy.max },
-        烹饪等级: {
-          等级: protagonist.cookingLevel,
-          称号: cookingTitles[Math.max(0, Math.min(cookingTitles.length - 1, protagonist.cookingLevel - 1))] ?? '',
-          做菜次数: protagonist.cookingExp,
-          下级所需次数: protagonist.cookingExpMax,
-        },
-      },
-      酒馆: {
-        名称: tavernName.value,
-        所属领地: openingSave.value?.region ?? '韦斯托利亚',
-        所在城市: openingSave.value?.tavernCity ?? location.region,
-        声望: reputationSnapshot,
-        声望值: reputationSnapshot.数值,
-        声望名: reputationSnapshot.名称,
-        资金: {
-          随身钱袋: makeMoneySnapshot(walletCopper.value),
-          钱匣: makeMoneySnapshot(cashboxCopper.value),
-          铜币: treasuryParts.value.copper,
-          银币: treasuryParts.value.silver,
-          金币: treasuryParts.value.gold,
-          铂金币: treasuryParts.value.platinum,
-          秘银币: treasuryParts.value.mithril,
-          折算合计铜币: treasuryCopper.value,
-        },
-        今日营业状态: protagonist.mood,
-        整体概况: tavernOverview.value,
-        区域: regionSnapshot,
-        客房: roomSnapshot,
-      },
-      街坊商铺: {
-        当前商铺: generatedShop.value && isCurrentShopLocation(generatedShop.value.name) ? generatedShop.value.name : '',
-      },
-      人物羁绊: relationshipSnapshot,
-      农田与酒窖: {
-        农田: farmSnapshot,
-        酒窖桶: brewSnapshot,
-      },
-      布草库存: Object.fromEntries(
-        linenStock.value.map(entry => [
-          entry.name,
-          {
-            总数: entry.total,
-            干净可用: entry.clean,
-            脏污待洗: entry.dirty,
-            晾晒中: entry.drying,
-          },
-        ]),
-      ),
-      晾晒: {
-        晾晒中: Object.fromEntries(
-          dryingBatches.value.map(batch => [
-            batch.id,
-            {
-              晾晒物品: batch.item,
-              晾晒位置: batch.position,
-              来源: batch.source,
-              弄脏原因: batch.dirtyReason,
-              晾晒开始日: batch.startedDay ?? '',
-              晾晒开始时间: batch.startedTime,
-              预计干燥日: batch.expectedDryDay ?? '',
-              干燥状态: batch.status,
-              备注: batch.note,
-            },
-          ]),
-        ),
-      },
-      厩舍: {
-        状态: stable.value.condition,
-        风格: stable.value.style,
-        描述: stable.value.description,
-        容量: stable.value.capacity,
-        当前载具数: stable.value.currentCount,
-        载具: Object.fromEntries(
-          stable.value.vehicles.map(vehicle => [
-            vehicle.name,
-            {
-              类型: vehicle.type,
-              品种: vehicle.breed,
-              所属: vehicle.owner,
-              健康状况: vehicle.health,
-              预计停留: vehicle.expectedStay,
-              饲料需求: vehicle.feedNeed,
-              备注: vehicle.note,
-            },
-          ]),
-        ),
-        饲料储备: makeInventorySnapshot(stable.value.feedStock).日用品,
-      },
-      禽畜圈养: {
-        圈舍状态: livestock.value.condition,
-        圈舍风格: livestock.value.style,
-        圈舍描述: livestock.value.description,
-        禽畜: Object.fromEntries(
-          livestock.value.animals.map(animal => [
-            animal.name,
-            {
-              类型: animal.type,
-              品种: animal.breed,
-              数量: animal.qty,
-              成长阶段: animal.growthStage,
-              产出物: animal.product,
-              产出周期: animal.productCycle,
-              上次产出日: animal.lastProductDay ?? '',
-              饲料需求: animal.feedNeed,
-              健康状况: animal.health,
-              备注: animal.note,
-            },
-          ]),
-        ),
-        饲料储备: makeInventorySnapshot(livestock.value.feedStock).日用品,
-      },
-      库房: storage,
-      行囊: makeInventorySnapshot(satchel.value),
-      临时状态: clonePlain(temporaryStates.value),
-    };
+    const statData = readMessageStatData();
+    return statData ? clonePlainData(statData) : {};
   }
 
   function getAuthoritativeMvuData(preferredMessageId?: number, fallbackSummary = ''): PrimordiaStatData {
+    void fallbackSummary;
     const statData = readMessageStatData(preferredMessageId);
     return statData ? clonePlainData(statData) : {};
   }
@@ -8016,6 +8536,16 @@ export const useGameStore = defineStore('primordia', () => {
     return actualText.replace(/\s+/g, ' ').includes(anchor);
   }
 
+  function frontendSnapshotMatchesCurrentBranch(snapshot: Pick<PrimordiaSaveBody, 'lastMessageId' | 'messageSignature' | 'latestStory'>) {
+    if (typeof snapshot.lastMessageId !== 'number') return true;
+    const currentLastMessageId = typeof getLastMessageId === 'function' ? getLastMessageId() : undefined;
+    if (typeof currentLastMessageId === 'number' && snapshot.lastMessageId > currentLastMessageId) return false;
+
+    const actualText = readMessageText(snapshot.lastMessageId);
+    if (!actualText) return false;
+    return snapshotMatchesCurrentMessage(snapshot);
+  }
+
   function floorSnapshotKeepLimit() {
     const fallback = 30;
     try {
@@ -8062,7 +8592,7 @@ export const useGameStore = defineStore('primordia', () => {
         monthIndex: calendar.monthIndex,
         day: calendar.day,
         timeOfDay: calendar.timeOfDay,
-        clock: normalizeClockText(calendar.clock, '00:00'),
+        clock: normalizeClockText(calendar.clock, ''),
         weather: calendar.weather,
         weatherIcon: calendar.weatherIcon,
         weatherDescription: calendar.weatherDescription,
@@ -8118,6 +8648,8 @@ export const useGameStore = defineStore('primordia', () => {
       businessSettlementRecords: clonePlain(businessSettlementRecords.value),
       rumorRecords: clonePlain(rumorRecords.value),
       rumorDailyState: clonePlain(rumorDailyState.value),
+      characterVisitSchedulerEnabled: characterVisitSchedulerEnabled.value,
+      characterVisitSchedulerState: clonePlain(characterVisitSchedulerState.value),
       engineLogs: clonePlain(engineLogs.value),
       generatedShop: activeGeneratedShop ? clonePlain(activeGeneratedShop) : null,
       generatedShopProducts: activeGeneratedShop ? clonePlain(generatedShopProducts.value) : [],
@@ -8325,6 +8857,8 @@ export const useGameStore = defineStore('primordia', () => {
       businessSettlementRecords: normalizeSettlementRecords(source.businessSettlementRecords),
       rumorRecords: normalizeRumorRecords(source.rumorRecords),
       rumorDailyState: normalizeRumorDailyState(source.rumorDailyState),
+      characterVisitSchedulerEnabled: source.characterVisitSchedulerEnabled !== false,
+      characterVisitSchedulerState: normalizeCharacterVisitSchedulerState(source.characterVisitSchedulerState),
       engineLogs: Array.isArray(source.engineLogs) ? clonePlain(source.engineLogs) : clonePlain(engineLogs.value),
       generatedShop: normalizedShop,
       generatedShopProducts: normalizedProducts,
@@ -8435,6 +8969,7 @@ export const useGameStore = defineStore('primordia', () => {
     isBusinessOpen.value = business.isOpen;
     guestCap.value = business.guestCap;
     visitorChance.value = business.visitorChance;
+    rumorChance.value = business.rumorChance;
     currentGuests.value = Math.min(business.currentGuests, business.guestCap);
     lastVisitorSeed.value = business.lastVisitorSeed;
     backgroundGroups.value = normalizeBackgroundGroups(business.backgroundGroups);
@@ -8480,6 +9015,8 @@ export const useGameStore = defineStore('primordia', () => {
     businessSettlementRecords.value = normalizeSettlementRecords(normalized.businessSettlementRecords);
     rumorRecords.value = normalizeRumorRecords(normalized.rumorRecords);
     rumorDailyState.value = normalizeRumorDailyState(normalized.rumorDailyState);
+    characterVisitSchedulerEnabled.value = normalized.characterVisitSchedulerEnabled !== false;
+    characterVisitSchedulerState.value = normalizeCharacterVisitSchedulerState(normalized.characterVisitSchedulerState);
     engineLogs.value = clonePlain(normalized.engineLogs);
     draftActions.value = clonePlain(normalized.draftActions ?? []);
     openingSave.value = normalized.opening ? clonePlain(normalized.opening) : null;
@@ -8497,11 +9034,20 @@ export const useGameStore = defineStore('primordia', () => {
     const normalized = normalizeSaveSnapshot(snapshot);
     if (!normalized) return false;
     if (!openingSnapshotMatchesCurrentChat(normalized.opening, normalized.lastMessageId)) return false;
+    if (!frontendSnapshotMatchesCurrentBranch(normalized)) return false;
     const nextPromiseMemos = normalizePromiseMemoList(normalized.promiseMemos);
     const nextRecipes = mergeRecipeEntries(recipes.value, normalized.recipes);
     const nextFormulas = normalizeStateFormulaList([...tavernStateFormulas.value, ...(normalized.tavernStateFormulas ?? [])]);
     const nextRumors = normalizeRumorRecords(normalized.rumorRecords);
-    const changed = Boolean(nextPromiseMemos.length || nextRecipes.length || nextFormulas.length || normalized.businessAgreements?.length || nextRumors.length);
+    const nextCharacterVisitState = normalizeCharacterVisitSchedulerState(normalized.characterVisitSchedulerState);
+    const changed = Boolean(
+      nextPromiseMemos.length ||
+        nextRecipes.length ||
+        nextFormulas.length ||
+        normalized.businessAgreements?.length ||
+        nextRumors.length ||
+        nextCharacterVisitState.events.length,
+    );
     if (!changed) return false;
     promiseMemos.value = nextPromiseMemos;
     recipes.value = nextRecipes;
@@ -8511,12 +9057,64 @@ export const useGameStore = defineStore('primordia', () => {
     businessSettlementRecords.value = normalizeSettlementRecords(normalized.businessSettlementRecords);
     rumorRecords.value = nextRumors;
     rumorDailyState.value = normalizeRumorDailyState(normalized.rumorDailyState);
+    characterVisitSchedulerEnabled.value = normalized.characterVisitSchedulerEnabled !== false;
+    characterVisitSchedulerState.value = nextCharacterVisitState;
     return true;
+  }
+
+  function mergeMissingFrontendOnlySnapshot(snapshot: PrimordiaSaveBody | undefined) {
+    const normalized = normalizeSaveSnapshot(snapshot);
+    if (!normalized) return false;
+    if (!openingSnapshotMatchesCurrentChat(normalized.opening, normalized.lastMessageId)) return false;
+    if (!frontendSnapshotMatchesCurrentBranch(normalized)) return false;
+
+    let changed = false;
+    const fallbackPromiseMemos = normalizePromiseMemoList(normalized.promiseMemos);
+    if (!promiseMemos.value.length && fallbackPromiseMemos.length) {
+      promiseMemos.value = fallbackPromiseMemos;
+      changed = true;
+    }
+
+    const mergedRecipes = mergeRecipeEntries(recipes.value, normalized.recipes);
+    if (mergedRecipes.length !== recipes.value.length) {
+      recipes.value = mergedRecipes;
+      changed = true;
+    }
+
+    const fallbackFormulas = normalizeStateFormulaList(normalized.tavernStateFormulas);
+    if (!tavernStateFormulas.value.length && fallbackFormulas.length) {
+      tavernStateFormulas.value = fallbackFormulas;
+      tavernMaintenance.value = normalizeMaintenanceList(normalized.tavernMaintenance);
+      changed = true;
+    }
+
+    const fallbackAgreements = normalizeAgreementList(normalized.businessAgreements);
+    if (!businessAgreements.value.length && fallbackAgreements.length) {
+      businessAgreements.value = fallbackAgreements;
+      businessSettlementRecords.value = normalizeSettlementRecords(normalized.businessSettlementRecords);
+      changed = true;
+    }
+
+    const fallbackRumors = normalizeRumorRecords(normalized.rumorRecords);
+    if (!rumorRecords.value.length && fallbackRumors.length) {
+      rumorRecords.value = fallbackRumors;
+      rumorDailyState.value = normalizeRumorDailyState(normalized.rumorDailyState);
+      changed = true;
+    }
+
+    const fallbackVisitState = normalizeCharacterVisitSchedulerState(normalized.characterVisitSchedulerState);
+    if (!characterVisitSchedulerState.value.events.length && fallbackVisitState.events.length) {
+      characterVisitSchedulerEnabled.value = normalized.characterVisitSchedulerEnabled !== false;
+      characterVisitSchedulerState.value = fallbackVisitState;
+      changed = true;
+    }
+
+    return changed;
   }
 
   function restoreFrontendOnlyFromChatSave(snapshot: PrimordiaChatSaveSnapshot | undefined) {
     if (!snapshot) return false;
-    if (restoreFrontendOnlySnapshot(snapshot)) return true;
+    const restoredPrimary = restoreFrontendOnlySnapshot(snapshot);
     const currentLastMessageId = typeof getLastMessageId === 'function' ? getLastMessageId() : Number.POSITIVE_INFINITY;
     const floorSnapshots = snapshot.floorSnapshots && typeof snapshot.floorSnapshots === 'object' ? snapshot.floorSnapshots : {};
     const fallback = Object.entries(floorSnapshots)
@@ -8525,8 +9123,19 @@ export const useGameStore = defineStore('primordia', () => {
       .sort((a, b) => b.messageId - a.messageId)
       .find(entry => {
         const normalized = normalizeSaveSnapshot(entry.floorSnapshot);
-        return Boolean(normalized && (normalized.promiseMemos?.length || normalized.recipes?.length || normalized.tavernStateFormulas?.length || normalized.businessAgreements?.length || normalized.rumorRecords?.length));
+        return Boolean(
+          normalized &&
+            frontendSnapshotMatchesCurrentBranch(normalized) &&
+            (normalized.promiseMemos?.length ||
+              normalized.recipes?.length ||
+              normalized.tavernStateFormulas?.length ||
+              normalized.businessAgreements?.length ||
+              normalized.rumorRecords?.length),
+        );
       });
+    if (restoredPrimary) {
+      return Boolean((fallback && mergeMissingFrontendOnlySnapshot(fallback.floorSnapshot)) || restoredPrimary);
+    }
     if (fallback && restoreFrontendOnlySnapshot(fallback.floorSnapshot)) return true;
     const mergedRecipes = mergeRecipeEntries(
       snapshot.recipes,
@@ -8632,11 +9241,9 @@ export const useGameStore = defineStore('primordia', () => {
       if (onlyBootFloor && snapshot) {
         return false;
       }
-      const restoredSnapshot = snapshot ? applyChatSaveSnapshot(snapshot) : false;
-      if (!restoredSnapshot) {
-        restoreFrontendOnlyFromChatSave(snapshot);
-        syncFrontendFromMessageMvu({ restoreInventory: true });
-      }
+      const restoredSnapshot = false;
+      restoreFrontendOnlyFromChatSave(snapshot);
+      syncFrontendFromMessageMvu({ restoreInventory: true });
       replayLatestCraftResultForPending();
       return restoredSnapshot;
     } catch (error) {
@@ -9033,12 +9640,14 @@ export const useGameStore = defineStore('primordia', () => {
   function applyOpeningState(draft: OpeningWorkshopDraft, bundle: OpeningGenerationBundle) {
     const tavernCity = draft.tavern.city.trim() || '布拉姆维克';
     const tavernPlace = draft.tavern.place.trim() || '主厅接待区';
-    calendar.year = 1303;
-    calendar.monthIndex = 4;
-    calendar.day = 17;
-    calendar.clock = '18:24';
-    calendar.timeOfDay = timeOfDayFromClock(calendar.clock) ?? '黄昏';
-    clearWeatherForDay();
+    calendar.year = 0;
+    calendar.monthIndex = -1;
+    calendar.day = 0;
+    calendar.clock = '';
+    calendar.timeOfDay = '';
+    calendar.weather = '';
+    calendar.weatherDescription = '';
+    calendar.weatherDaySerial = 0;
 
     tavernName.value = draft.tavern.name.trim() || '铁壶酒馆';
     tavernOverview.value =
@@ -9094,6 +9703,7 @@ export const useGameStore = defineStore('primordia', () => {
     currentGuests.value = 0;
     guestCap.value = DEFAULT_BUSINESS_GUEST_CAP;
     visitorChance.value = DEFAULT_BUSINESS_VISITOR_CHANCE;
+    rumorChance.value = DEFAULT_RUMOR_DAILY_CHANCE;
     lastVisitorSeed.value = '';
     backgroundGroups.value = [];
     lastBackgroundFlow.value = '';
@@ -11171,6 +11781,65 @@ export const useGameStore = defineStore('primordia', () => {
     return true;
   }
 
+  async function refreshCapturedFormatsFromHistory(
+    target: 'all' | 'promise' | 'businessAgreement' = 'all',
+    options: { silentWhenEmpty?: boolean; onlyWhenEmpty?: boolean } = {},
+  ) {
+    const wantsPromise = target === 'all' || target === 'promise';
+    const wantsBusinessAgreement = target === 'all' || target === 'businessAgreement';
+    if (
+      options.onlyWhenEmpty &&
+      (!wantsPromise || promiseMemos.value.length > 0) &&
+      (!wantsBusinessAgreement || businessAgreements.value.length > 0)
+    ) {
+      return false;
+    }
+
+    const stories = loadAssistantStoryIndex().sort((a, b) => (a.messageId ?? 0) - (b.messageId ?? 0));
+    let promiseBlocks = 0;
+    let businessBlocks = 0;
+    let changed = false;
+
+    for (const story of stories) {
+      if (wantsPromise && story.promiseUpdates?.length) {
+        promiseBlocks += story.promiseUpdates.length;
+        if (applyPromiseUpdates(story.promiseUpdates)) changed = true;
+      }
+      if (wantsBusinessAgreement && story.businessAgreementUpdates?.length) {
+        businessBlocks += story.businessAgreementUpdates.length;
+        if (applyBusinessAgreementUpdates(story.businessAgreementUpdates)) changed = true;
+      }
+    }
+
+    if (!changed) {
+      if (!options.silentWhenEmpty) {
+        const targetText =
+          target === 'promise' ? '约定备忘录' : target === 'businessAgreement' ? '经营约定' : '约定与经营约定';
+        pushLog('提示', `已扫描历史楼层，但没有发现可补录的${targetText}格式。`, {
+          source: 'engine',
+          authoritative: true,
+          tone: 'amber',
+          actionType: 'FORMAT_HISTORY_REFRESH',
+        });
+      }
+      return false;
+    }
+
+    markLocalStateDirty();
+    await writeChatSave(loadLatestAssistantMaintext());
+    const summary = [
+      wantsPromise && promiseBlocks ? `约定 ${promiseBlocks} 条` : '',
+      wantsBusinessAgreement && businessBlocks ? `经营约定 ${businessBlocks} 条` : '',
+    ].filter(Boolean);
+    pushLog('系统', `已从历史楼层补录捕捉格式：${summary.join('、')}。`, {
+      source: 'engine',
+      authoritative: true,
+      tone: 'cyan',
+      actionType: 'FORMAT_HISTORY_REFRESH',
+    });
+    return true;
+  }
+
   async function retryLatestTurnCapture() {
     if (isGenerating.value) return false;
 
@@ -11202,8 +11871,11 @@ export const useGameStore = defineStore('primordia', () => {
   const syncedFromMvu = restoredFromChatSave ? false : loadFromMvu({ force: true });
   if ((!restoredFromChatSave || heroines.value.length === 0) && !syncedFromMvu) loadFromMvu({ force: true });
   if (restoredFromChatSave && heroines.value.length > 0 && (openingCompleted.value || hasStartedNarrativeAfterBoot())) void writeChatSave();
-  if (openingSave.value?.worldbookName && (openingCompleted.value || hasStartedNarrativeAfterBoot())) {
-    void ensureDefaultWorldbookModules(openingSave.value.worldbookName);
+  void refreshCapturedFormatsFromHistory('all', { silentWhenEmpty: true, onlyWhenEmpty: true });
+  if ((openingSave.value?.worldbookName || defaultOpeningWorldbookName()) && (openingCompleted.value || hasStartedNarrativeAfterBoot())) {
+    window.setTimeout(() => {
+      void autoEnsureDefaultWorldbookBindings();
+    }, 0);
   }
   lastTickAt.value = Date.now();
 
@@ -11217,17 +11889,21 @@ export const useGameStore = defineStore('primordia', () => {
       npcActivityPlan?: TavernNpcActivityPlan | null;
       backgroundFlowPlan?: BackgroundFlowPlan | null;
       businessVisitorPlan?: TavernBusinessVisitorPlan | null;
+      characterVisitEvents?: CharacterVisitEvent[];
     } = {},
   ): Promise<boolean> {
     const reloadMvu = options.reloadMvu ?? true;
     const applyInventoryPatch = options.applyInventoryFromMvu ?? reloadMvu;
     if (!turnContextWorldbookReady.value) {
-      pushLog('提示', '本回合发送包条目未绑定或写入失败，已停止生成。', {
-        source: 'engine',
-        authoritative: true,
-        tone: 'red',
-      });
-      return false;
+      const ready = await ensureTurnContextWorldbook();
+      if (!ready) {
+        pushLog('提示', '本回合发送包条目未绑定或写入失败，已停止生成。', {
+          source: 'engine',
+          authoritative: true,
+          tone: 'red',
+        });
+        return false;
+      }
     }
     if (!reloadMvu) mvuReloadSuppressedUntil.value = Date.now() + 8000;
     isGenerating.value = true;
@@ -11236,14 +11912,34 @@ export const useGameStore = defineStore('primordia', () => {
     try {
       const completedTurnTarget = successfulNarrationTurn.value + 1;
       const stateDiscoveries = draftActions.value.map(action => action.stateDiscovery).filter((item): item is NonNullable<DraftAction['stateDiscovery']> => Boolean(item));
+      const duePromiseMemosForTurn = duePromiseMemos();
+      const characterVisitEventsForTurn = options.characterVisitEvents ?? dueCharacterVisitEvents();
+      const businessAgreementEventsForTurn = dueBusinessAgreementEvents();
+      const frontendTurnPlanLog = summarizeFrontendTurnPlan({
+        backgroundFlowPlan: options.backgroundFlowPlan ?? null,
+        businessVisitorPlan: options.businessVisitorPlan ?? null,
+        businessAgreementEvents: businessAgreementEventsForTurn,
+        characterVisitEvents: characterVisitEventsForTurn,
+        promiseMemos: duePromiseMemosForTurn,
+      });
+      if (frontendTurnPlanLog) {
+        pushLog('系统', frontendTurnPlanLog, {
+          source: 'engine',
+          authoritative: true,
+          tone: 'cyan',
+          actionType: 'TURN_FRONTEND_PLAN',
+        });
+        await writeChatSave();
+      }
       operationsRollback = snapshotLocalSettlement();
       const operationsSummaries = settleOperationsForTurn(completedTurnTarget);
       operationsChanged = operationsSummaries.length > 0;
-      const duePromiseMemosForTurn = duePromiseMemos();
       const duePromiseMemoIds = duePromiseMemosForTurn.map(memo => memo.id);
       const operationsBlock = formatOperationsPromptBlock(operationsSummaries);
       const promptWithOperations = operationsBlock ? `${scenePrompt}\n\n${operationsBlock}` : scenePrompt;
-      const scenePromptForRequest = appendDuePromiseMemoBlock(promptWithOperations, duePromiseMemosForTurn);
+      const promptWithBusinessAgreementEvents = appendBusinessAgreementEventPromptBlock(promptWithOperations, businessAgreementEventsForTurn);
+      const promptWithCharacterVisits = appendCharacterVisitPromptBlock(promptWithBusinessAgreementEvents, characterVisitEventsForTurn);
+      const scenePromptForRequest = appendDuePromiseMemoBlock(promptWithCharacterVisits, duePromiseMemosForTurn);
       const temporaryStateKeysBeforeTurn = captureTemporaryStateKeys();
       const authoritativeData = buildAuthoritativeRequestData(combined);
       const isPrebuiltNarrationPrompt = /<玩家本回合行动>|【叙述者权限边界】|【当前权威局势】|【输出格式】/.test(scenePromptForRequest);
@@ -11347,6 +12043,8 @@ export const useGameStore = defineStore('primordia', () => {
         commitManualWorkerAssignNpcActivities(completedTurn);
         commitBackgroundFlowPlan(options.backgroundFlowPlan ?? null);
         commitBusinessVisitorPlan(options.businessVisitorPlan ?? null);
+        markBusinessAgreementEventsTriggered(businessAgreementEventsForTurn);
+        markCharacterVisitEventsSent(characterVisitEventsForTurn, completedTurn);
         markPromiseMemosTriggered(duePromiseMemoIds, completedTurn);
         const temporaryStatesTicked = decrementExistingTemporaryStates(temporaryStateKeysBeforeTurn);
         if (temporaryStatesTicked) {
@@ -11473,7 +12171,9 @@ export const useGameStore = defineStore('primordia', () => {
           businessVisitorPlan,
         });
 
-    const result = await previewUnifiedNarrativeRequest(appendDuePromiseMemoBlock(scenePrompt, duePromiseMemos()), {
+    const previewPromptWithBusinessAgreementEvents = appendBusinessAgreementEventPromptBlock(scenePrompt, dueBusinessAgreementEvents());
+    const previewPromptWithCharacterVisits = appendCharacterVisitPromptBlock(previewPromptWithBusinessAgreementEvents, dueCharacterVisitEvents());
+    const result = await previewUnifiedNarrativeRequest(appendDuePromiseMemoBlock(previewPromptWithCharacterVisits, duePromiseMemos()), {
       authoritativeData: buildAuthoritativeRequestData(combined),
       worldbookScanText: buildWorldbookScanPreview(),
     });
@@ -11590,6 +12290,7 @@ export const useGameStore = defineStore('primordia', () => {
     currentGuests,
     guestCap,
     visitorChance,
+    rumorChance,
     lastVisitorSeed,
     backgroundGroups,
     lastBackgroundFlow,
@@ -11598,6 +12299,8 @@ export const useGameStore = defineStore('primordia', () => {
     pendingRegularGuestUpdates,
     rumorRecords,
     rumorDailyState,
+    characterVisitSchedulerEnabled,
+    characterVisitSchedulerState,
     regularGuestBookWorldbookBinding,
     regularGuestBookWorldbookStatus,
     inventory,
@@ -11730,6 +12433,8 @@ export const useGameStore = defineStore('primordia', () => {
     setBusinessOpen,
     setBusinessGuestCap,
     setBusinessVisitorChance,
+    setRumorChance,
+    setCharacterVisitSchedulerEnabled,
     activeGuestGroups,
     orderableGuestGroups,
     addGuestGroup,
@@ -11755,7 +12460,9 @@ export const useGameStore = defineStore('primordia', () => {
     craftRecipe,
     deleteRecipe,
     setMaintenanceEnabled,
+    setTavernStateFormulaRegion,
     setBusinessAgreementEnabled,
+    updateBusinessAgreementEventRule,
     deleteTavernStateFormula,
     deleteBusinessAgreement,
     buildDebugSaveJson,

@@ -116,6 +116,7 @@ export interface ParsedTavernStateUpdate {
   targetRegion: string;
   description: string;
   guestResponseHint: string;
+  durationTurns?: number;
 }
 
 export interface ParsedBusinessAgreementInventoryChange {
@@ -125,15 +126,25 @@ export interface ParsedBusinessAgreementInventoryChange {
   tags: string[];
 }
 
+export interface ParsedBusinessAgreementEventRule {
+  enabled: boolean;
+  prompt: string;
+  triggerTime: string;
+  scene: 'any' | 'tavern';
+  missedPolicy: 'past' | 'silent' | 'defer';
+}
+
 export interface ParsedBusinessAgreementUpdate {
   action: 'add' | 'update' | 'cancel';
   id?: string;
   kind: 'wage' | 'rent' | 'delivery' | 'sideBusiness';
   name: string;
   counterparty: string;
+  cadence: 'daily' | 'weekly';
   cashboxDeltaCopper: number;
   inventoryChanges: ParsedBusinessAgreementInventoryChange[];
   reminder: string;
+  eventRule?: ParsedBusinessAgreementEventRule;
 }
 
 export type CharacterBehaviorUpdateAction = 'learn' | 'remove' | 'update';
@@ -365,7 +376,7 @@ function findPreviousUserMessageId(messageId?: number): number | undefined {
   return undefined;
 }
 
-function parseStoryMessage(
+export function parseStoryMessage(
   messageContent: string,
   messageId?: number,
   options: { preferEmbeddedNormalized?: boolean } = {},
@@ -479,6 +490,21 @@ function readJsonFirstString(record: Record<string, any>, keys: string[]): strin
     if (text) return text;
   }
   return '';
+}
+
+function readJsonFirstNumber(record: Record<string, any>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+      const match = value.match(/-?\d+(?:\.\d+)?/);
+      if (match) {
+        const parsed = Number(match[0]);
+        if (Number.isFinite(parsed)) return parsed;
+      }
+    }
+  }
+  return undefined;
 }
 
 function readJsonStringList(record: Record<string, any>, keys: string[]): string[] {
@@ -1138,15 +1164,30 @@ function normalizeTavernStateUpdate(value: unknown): ParsedTavernStateUpdate | u
   const targetRegion = readJsonFirstString(record, ['target_region', 'targetRegion', 'region', '目标区域', '区域']);
   const description = readJsonFirstString(record, ['description', '描述', '效果']);
   const guestResponseHint = readJsonFirstString(record, ['guest_response_hint', 'guestResponseHint', '客人反应', '客人感受']);
+  const rawDurationTurns = readJsonFirstNumber(record, [
+    'duration_turns',
+    'durationTurns',
+    'maintain_every_turns',
+    'maintainEveryTurns',
+    'remaining_turns',
+    'remainingTurns',
+    'turns',
+    '持续回合',
+    '维持回合',
+    '补充周期',
+    '剩余回合',
+  ]);
+  const durationTurns = rawDurationTurns && rawDurationTurns > 0 ? Math.max(1, Math.floor(rawDurationTurns)) : undefined;
   if (!name && !id) return undefined;
-  if (action !== 'remove' && (!name || !targetRegion || !description)) return undefined;
+  if (action !== 'remove' && !name) return undefined;
   return {
     action,
     ...(id ? { id } : {}),
     name: name || id,
-    targetRegion,
-    description,
+    targetRegion: targetRegion || '待确认区域',
+    description: description || name || id,
     guestResponseHint,
+    ...(durationTurns ? { durationTurns } : {}),
   };
 }
 
@@ -1170,6 +1211,34 @@ function normalizeAgreementKind(raw: string): ParsedBusinessAgreementUpdate['kin
   return 'wage';
 }
 
+function normalizeAgreementCadence(raw: string, fallbackText = ''): ParsedBusinessAgreementUpdate['cadence'] {
+  const value = `${raw} ${fallbackText}`.trim().toLowerCase();
+  if (/weekly|week|每周|一周|市日|周/.test(value)) return 'weekly';
+  return 'daily';
+}
+
+function normalizeAgreementEventRule(record: Record<string, unknown>): ParsedBusinessAgreementEventRule | undefined {
+  const nested = record.event_rule ?? record.eventRule;
+  const eventRecord = nested && typeof nested === 'object' ? nested as Record<string, unknown> : record;
+  const enabledRaw = eventRecord.event_enabled ?? eventRecord.eventEnabled ?? eventRecord.enabled;
+  const prompt = readJsonFirstString(eventRecord, ['event_prompt', 'eventPrompt', 'prompt']);
+  const triggerTime = readJsonFirstString(eventRecord, ['event_time', 'eventTime', 'trigger_time', 'triggerTime', 'time']) || '07:00';
+  const sceneText = readJsonFirstString(eventRecord, ['event_scene', 'eventScene', 'scene']).toLowerCase();
+  const missedText = readJsonFirstString(eventRecord, ['missed_policy', 'missedPolicy']).toLowerCase();
+  const enabledText = String(enabledRaw ?? '').trim().toLowerCase();
+  const enabled = enabledText
+    ? !(enabledText === 'false' || enabledText === '0' || enabledText === 'no')
+    : Boolean(prompt);
+  if (!enabled && !prompt) return undefined;
+  return {
+    enabled,
+    prompt,
+    triggerTime,
+    scene: /any/.test(sceneText) ? 'any' : 'tavern',
+    missedPolicy: /silent/.test(missedText) ? 'silent' : /defer/.test(missedText) ? 'defer' : 'past',
+  };
+}
+
 function normalizeBusinessAgreementUpdate(value: unknown): ParsedBusinessAgreementUpdate | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const record = value as Record<string, unknown>;
@@ -1183,6 +1252,7 @@ function normalizeBusinessAgreementUpdate(value: unknown): ParsedBusinessAgreeme
   const kind = normalizeAgreementKind(readJsonFirstString(record, ['kind', 'type', '类型', '约定类型']));
   const name = readJsonFirstString(record, ['name', '名称', '标题']);
   const counterparty = readJsonFirstString(record, ['counterparty', 'person', '对象', '对方', '人物']);
+  const cadenceText = readJsonFirstString(record, ['cadence', 'period', 'frequency', '周期', '频率']);
   const cashboxDeltaCopper = Math.trunc(Number(record.cashbox_delta_copper ?? record.cashboxDeltaCopper ?? record['钱匣变化铜币'] ?? record['金额铜币'] ?? 0) || 0);
   const rawChanges = record.inventory_changes ?? record.inventoryChanges ?? record['库存变化'];
   const inventoryChanges = (Array.isArray(rawChanges) ? rawChanges : [])
@@ -1197,6 +1267,7 @@ function normalizeBusinessAgreementUpdate(value: unknown): ParsedBusinessAgreeme
     })
     .filter((entry): entry is ParsedBusinessAgreementInventoryChange => Boolean(entry));
   const reminder = readJsonFirstString(record, ['reminder', '提醒', '说明', '内容']);
+  const eventRule = normalizeAgreementEventRule(record);
   if (!name && !id) return undefined;
   if (action !== 'cancel' && (!name || !counterparty || (!cashboxDeltaCopper && !inventoryChanges.length))) return undefined;
   return {
@@ -1205,9 +1276,11 @@ function normalizeBusinessAgreementUpdate(value: unknown): ParsedBusinessAgreeme
     kind,
     name: name || id,
     counterparty,
+    cadence: normalizeAgreementCadence(cadenceText, `${name} ${reminder}`),
     cashboxDeltaCopper,
     inventoryChanges,
     reminder: reminder || name || id,
+    ...(eventRule ? { eventRule } : {}),
   };
 }
 

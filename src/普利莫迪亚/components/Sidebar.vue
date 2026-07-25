@@ -106,8 +106,8 @@ const tavernReputationCap = computed(() => {
 const tavernReputationRange = computed(() => {
   return game.reputationRange || '未记录';
 });
-const inventoryNavName = computed(() => (game.canUseStorageInventoryHere() ? '行囊与库房' : '个人行囊'));
-const inventoryNavSub = computed(() => (game.canUseStorageInventoryHere() ? '随身 · 库存 · 取用' : '随身携带 · 主角物品'));
+const inventoryNavName = computed(() => (game.canUseStorageInventoryHere() ? '行囊与库房' : '酒馆库房'));
+const inventoryNavSub = computed(() => (game.canUseStorageInventoryHere() ? '随身 · 库存 · 取用' : '酒馆库存 · 远程查看'));
 const tavernReputationProgress = computed(() => {
   const stage = tavernReputationStage.value;
   if (stage.index >= 5) return 100;
@@ -147,7 +147,7 @@ function openMobilePromises() {
 }
 
 function openMobileSatchel() {
-  game.currentTab = 'inventory';
+  game.currentTab = 'protagonist';
 }
 </script>
 

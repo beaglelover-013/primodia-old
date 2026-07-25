@@ -300,6 +300,14 @@ async function updateNpcActivityMinSuccessTurns(event: Event) {
   await game.setNpcActivityMinSuccessTurns(Number((event.target as HTMLInputElement).value));
 }
 
+function updateRumorChance(event: Event) {
+  game.setRumorChance(Number((event.target as HTMLInputElement).value));
+}
+
+async function toggleCharacterVisitScheduler() {
+  await game.setCharacterVisitSchedulerEnabled(!game.characterVisitSchedulerEnabled);
+}
+
 async function clearNpcActivityBinding() {
   await game.clearNpcActivityWorldbookBindings();
 }
@@ -568,6 +576,43 @@ async function importSaveFile(event: Event) {
         <p class="pm-dim">这里会同步到顶部位置、正文页、经营记录和当前楼层变量。</p>
         <p v-if="tavernNameError" class="edit-error">{{ tavernNameError }}</p>
         <p v-if="tavernNameNotice" class="edit-notice">{{ tavernNameNotice }}</p>
+      </section>
+
+      <section v-show="activeSettingsSection === 'play'" class="settings-card pm-card">
+        <h3>营业钩子</h3>
+        <label class="pm-field">
+          <span>近日听闻触发率</span>
+          <input
+            class="pm-input"
+            type="number"
+            min="0"
+            max="100"
+            :value="game.rumorChance"
+            @change="updateRumorChance"
+          />
+        </label>
+        <p class="pm-dim">
+          每个游戏日期首次遇到互动访客时判定一次。设为 0 可关闭客人口信，设为 100 则当天首次互动访客必定尝试带出口信。
+        </p>
+      </section>
+
+      <section v-show="activeSettingsSection === 'play'" class="settings-card pm-card">
+        <h3>角色来访调度</h3>
+        <div class="activity-status mini">
+          <span class="pm-tag" :class="game.characterVisitSchedulerEnabled ? 'good' : 'warn'">
+            {{ game.characterVisitSchedulerEnabled ? '已开启' : '已关闭' }}
+          </span>
+          <span>首次关闭 {{ Object.keys(game.characterVisitSchedulerState.firstClosed).length }} 位</span>
+          <span>今日事件 {{ game.characterVisitSchedulerState.events.filter(event => event.daySerial === game.currentCalendarDay()).length }} 条</span>
+        </div>
+        <div class="card-actions">
+          <button class="pm-btn sm" :class="{ ghost: game.characterVisitSchedulerEnabled }" @click="toggleCharacterVisitScheduler">
+            <PmIcon name="calendar" :size="12" /> {{ game.characterVisitSchedulerEnabled ? '关闭角色来访' : '开启角色来访' }}
+          </button>
+        </div>
+        <p class="pm-dim">
+          前端后台按日历、羁绊阶段和地点判断命名角色来访；未来排程不会显示在日历上，只在触发时写入规则提醒和发送包。
+        </p>
       </section>
 
       <section v-show="activeSettingsSection === 'display'" class="settings-card pm-card">

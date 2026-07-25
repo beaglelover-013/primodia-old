@@ -1,6 +1,7 @@
 ﻿import {
   parseCraftResult,
   parseCharacterBehaviorUpdates,
+  parseBusinessAgreementUpdates,
   parseMaintext,
   parseOptions,
   parsePromiseUpdates,
@@ -8,6 +9,7 @@
   parseRumorRecords,
   parseShop,
   parseSum,
+  parseTavernStateUpdates,
   type LatestMaintextPayload,
 } from './messageParser';
 import { parseGuestUpdates } from './messageParser';
@@ -61,6 +63,68 @@ async function deleteGeneratedTurnMessages(messageIds: Array<number | undefined>
     console.warn('[primordia] 清理失败生成楼层失败:', error);
     return false;
   }
+}
+
+interface AssistantSwipeSnapshot {
+  messageId: number;
+  swipeId: number;
+  swipes: string[];
+  swipesData: Record<string, any>[];
+  swipesInfo: Record<string, any>[];
+}
+
+function readAssistantSwipeSnapshot(messageId: number): AssistantSwipeSnapshot | undefined {
+  if (typeof getChatMessages !== 'function') return undefined;
+  try {
+    const message = getChatMessages(messageId, {
+      role: 'assistant',
+      hide_state: 'all',
+      include_swipes: true,
+    })[0];
+    if (!message) return undefined;
+    return {
+      messageId,
+      swipeId: Number.isFinite(message.swipe_id) ? message.swipe_id : 0,
+      swipes: [...(message.swipes ?? [])],
+      swipesData: (message.swipes_data ?? []).map(data => cloneData(data ?? {})),
+      swipesInfo: (message.swipes_info ?? []).map(info => cloneData(info ?? {})),
+    };
+  } catch (error) {
+    console.warn(`[primordia] 读取 assistant 楼层 #${messageId} 的版本列表失败:`, error);
+    return undefined;
+  }
+}
+
+async function restoreAssistantSwipeSnapshot(snapshot?: AssistantSwipeSnapshot) {
+  if (!snapshot || typeof setChatMessages !== 'function') return false;
+  try {
+    await setChatMessages(
+      [
+        {
+          message_id: snapshot.messageId,
+          swipe_id: snapshot.swipeId,
+          swipes: [...snapshot.swipes],
+          swipes_data: snapshot.swipesData.map(data => cloneData(data)),
+          swipes_info: snapshot.swipesInfo.map(info => cloneData(info)),
+        },
+      ],
+      { refresh: 'affected' },
+    );
+    return true;
+  } catch (error) {
+    console.warn(`[primordia] 恢复 assistant 楼层 #${snapshot.messageId} 的版本列表失败:`, error);
+    return false;
+  }
+}
+
+function buildActiveSwipeData(messageId: number, statData: Record<string, any>) {
+  const snapshot = readAssistantSwipeSnapshot(messageId);
+  if (!snapshot || snapshot.swipes.length <= 1) return undefined;
+  const activeIndex = Math.max(0, Math.min(snapshot.swipes.length - 1, snapshot.swipeId));
+  const swipesData = snapshot.swipesData.map(data => cloneData(data));
+  while (swipesData.length < snapshot.swipes.length) swipesData.push({});
+  swipesData[activeIndex] = wrapPrimordiaMvuData(cloneData(statData));
+  return swipesData;
 }
 
 export interface PromptPreflightResult {
@@ -607,6 +671,8 @@ function normalizeAssistantMessage(raw: string): {
   const regularGuestUpdate = extractLastTag(cleaned, 'regular_guest_update');
   const rumorRecord = extractLastTag(cleaned, 'rumor_record');
   const promiseUpdate = extractLastTag(cleaned, 'promise_update');
+  const tavernStateUpdate = extractLastTag(cleaned, 'tavern_state_update');
+  const businessAgreementUpdate = extractLastTag(cleaned, 'business_agreement_update');
   const characterBehaviorUpdate = extractLastTag(cleaned, 'character_behavior_update');
   const shop = extractLastTag(cleaned, 'shop');
   const option = extractLastTag(cleaned, 'option');
@@ -648,6 +714,8 @@ function normalizeAssistantMessage(raw: string): {
   if (regularGuestUpdate) message += `\n\n<regular_guest_update>\n${regularGuestUpdate}\n</regular_guest_update>`;
   if (rumorRecord) message += `\n\n<rumor_record>\n${rumorRecord}\n</rumor_record>`;
   if (promiseUpdate) message += `\n\n<promise_update>\n${promiseUpdate}\n</promise_update>`;
+  if (tavernStateUpdate) message += `\n\n<tavern_state_update>\n${tavernStateUpdate}\n</tavern_state_update>`;
+  if (businessAgreementUpdate) message += `\n\n<business_agreement_update>\n${businessAgreementUpdate}\n</business_agreement_update>`;
   if (characterBehaviorUpdate) message += `\n\n<character_behavior_update>\n${characterBehaviorUpdate}\n</character_behavior_update>`;
 
   let mvuMessage = message;
@@ -667,6 +735,8 @@ function normalizeAssistantMessage(raw: string): {
       regularGuestUpdates: parseRegularGuestUpdates(message),
       rumorRecords: parseRumorRecords(message),
       promiseUpdates: parsePromiseUpdates(message),
+      tavernStateUpdates: parseTavernStateUpdates(message),
+      businessAgreementUpdates: parseBusinessAgreementUpdates(message),
       characterBehaviorUpdates: parseCharacterBehaviorUpdates(message),
       fullMessage: mvuMessage,
     },
@@ -681,6 +751,8 @@ function stripHiddenOutputTags(content: string): string {
     .replace(/<regular_guest_update\b[^>]*>[\s\S]*?<\/regular_guest_update>/gi, '')
     .replace(/<rumor_record\b[^>]*>[\s\S]*?<\/rumor_record>/gi, '')
     .replace(/<promise_update\b[^>]*>[\s\S]*?<\/promise_update>/gi, '')
+    .replace(/<tavern_state_update\b[^>]*>[\s\S]*?<\/tavern_state_update>/gi, '')
+    .replace(/<business_agreement_update\b[^>]*>[\s\S]*?<\/business_agreement_update>/gi, '')
     .replace(/<character_behavior_update\b[^>]*>[\s\S]*?<\/character_behavior_update>/gi, '')
     .replace(/<UpdateVariable\b[^>]*>[\s\S]*?<\/UpdateVariable>/gi, '')
     .replace(/<JSONPatch\b[^>]*>[\s\S]*?<\/JSONPatch>/gi, '')
@@ -1265,6 +1337,7 @@ export async function runUnifiedNarrativeRequest(
   const baselineMessageId = typeof getLastMessageId === 'function' ? getLastMessageId() : -1;
   let generatedUserMessageId: number | undefined;
   let generatedAssistantMessageId: number | undefined;
+  let regenerationSnapshot: AssistantSwipeSnapshot | undefined;
 
   try {
     const baseData = await readBaseMvuData();
@@ -1272,6 +1345,12 @@ export async function runUnifiedNarrativeRequest(
       ? mergeAuthoritativeData(baseData, callbacks.authoritativeData)
       : baseData;
     const shouldCreateUserMessage = callbacks.createUserMessage !== false;
+    if (!shouldCreateUserMessage) {
+      regenerationSnapshot = readAssistantSwipeSnapshot(baselineMessageId);
+      if (!regenerationSnapshot) {
+        throw new Error('无法读取当前 assistant 楼层，已停止重 roll。');
+      }
+    }
     const debugId = `prompt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const turnId = `primordia-turn-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const visibleUserAction = extractVisibleUserAction(prompt);
@@ -1390,6 +1469,9 @@ export async function runUnifiedNarrativeRequest(
     }
     const userMessageId = nativeTurn.userMessageId;
     const assistantId = nativeTurn.assistantMessage.message_id;
+    if (!shouldCreateUserMessage && assistantId !== baselineMessageId) {
+      throw new Error(`重 roll 意外生成了新楼层 #${assistantId}，已拒绝采用。`);
+    }
 
     const { message, mvuMessage, latest } = normalizeAssistantMessage(generatedText);
     const hasScenePatch = messageHasScenePatch(mvuMessage);
@@ -1451,11 +1533,13 @@ export async function runUnifiedNarrativeRequest(
       normalizedMessage: message,
     });
 
+    const activeSwipeData = buildActiveSwipeData(assistantId, finalData);
     await setChatMessages(
       [
         {
           message_id: assistantId,
           data: wrapPrimordiaMvuData(finalData),
+          ...(activeSwipeData ? { swipes_data: activeSwipeData } : {}),
           extra: {
             ...(nativeTurn.assistantMessage.extra ?? {}),
             primordia: {
@@ -1488,6 +1572,7 @@ export async function runUnifiedNarrativeRequest(
     };
   } catch (error) {
     const cleaned = await deleteGeneratedTurnMessages([generatedAssistantMessageId, generatedUserMessageId], baselineMessageId);
+    const restoredSwipe = await restoreAssistantSwipeSnapshot(regenerationSnapshot);
     rememberPromptDebug({
       id: `prompt-error-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       createdAt: new Date().toLocaleString(),
@@ -1495,11 +1580,11 @@ export async function runUnifiedNarrativeRequest(
       userInput: prompt,
       baseDataSummary: 'Request failed before the debug snapshot was finalized.',
       injects: [],
-      error: `${error instanceof Error ? error.message : '生成失败。'}${cleaned ? ' 已删除本次失败生成的新楼层。' : ''}`,
+      error: `${error instanceof Error ? error.message : '生成失败。'}${cleaned ? ' 已删除本次失败生成的新楼层。' : ''}${restoredSwipe ? ' 已恢复原楼层版本。' : ''}`,
     });
     return {
       ok: false,
-      error: `${error instanceof Error ? error.message : '生成失败。'}${cleaned ? ' 已删除本次失败生成的新楼层。' : ''}`,
+      error: `${error instanceof Error ? error.message : '生成失败。'}${cleaned ? ' 已删除本次失败生成的新楼层。' : ''}${restoredSwipe ? ' 已恢复原楼层版本。' : ''}`,
     };
   } finally {
     uninjectScanPrompts?.();
