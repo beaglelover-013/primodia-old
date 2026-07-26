@@ -42,7 +42,9 @@ const mvuEventStops: EventOnReturn[] = [];
 const tavernEventStops: EventOnReturn[] = [];
 let mvuEventsRegistered = false;
 const STORY_FOCUS_EVENT = 'primordia:focus-latest-story';
-const entryMode = ref<'title' | 'opening' | 'main'>('title');
+const entryMode = ref<'checking' | 'title' | 'opening' | 'main'>(
+  readLatestMessageId() > 0 ? 'main' : 'checking',
+);
 const titleLoading = ref(false);
 const titleStatus = ref('');
 const styleGuidePreview = ref(window.location.hash === '#ui-kit');
@@ -300,6 +302,29 @@ async function enterOpeningCreator() {
   scheduleHostFrameSize();
 }
 
+async function resolveInitialEntry() {
+  if (styleGuidePreview.value || openingPagePreview.value) return;
+
+  const messageIdBeforeRefresh = readLatestMessageId();
+  if (messageIdBeforeRefresh > 0) {
+    entryMode.value = 'main';
+  } else {
+    entryMode.value = 'checking';
+  }
+
+  try {
+    await refreshAuthoritativeState({ clearMissingShop: true });
+    const latestMessageId = readLatestMessageId();
+    entryMode.value = latestMessageId > 0 ? 'main' : 'title';
+  } catch (error) {
+    console.warn('[primordia] 初始入口检测失败:', error);
+    entryMode.value = messageIdBeforeRefresh > 0 ? 'main' : 'title';
+  }
+
+  await nextTick();
+  scheduleHostFrameSize();
+}
+
 async function startFromTitle() {
   if (titleLoading.value) return;
   titleLoading.value = true;
@@ -340,7 +365,7 @@ onMounted(() => {
     }
     scheduleHostFrameSize();
   });
-  scheduleAuthoritativeStateRefresh({ clearMissingShop: true }, 0);
+  void resolveInitialEntry();
   scheduleAuthoritativeStateRetries();
   void registerMvuStateSyncEvents();
   if (typeof eventOn !== 'function' || typeof tavern_events === 'undefined') return;
@@ -350,7 +375,9 @@ onMounted(() => {
     eventOn(tavern_events.MESSAGE_UPDATED, () => scheduleAuthoritativeStateRefresh()),
     eventOn(tavern_events.MESSAGE_EDITED, () => scheduleAuthoritativeStateRefresh()),
     eventOn(tavern_events.MESSAGE_SWIPED, () => scheduleAuthoritativeStateRefresh({ clearMissingShop: true })),
-    eventOn(tavern_events.CHAT_CHANGED, () => scheduleAuthoritativeStateRefresh({ clearMissingShop: true })),
+    eventOn(tavern_events.CHAT_CHANGED, () => {
+      void resolveInitialEntry();
+    }),
     eventOn(tavern_events.CHARACTER_MESSAGE_RENDERED, () => scheduleAuthoritativeStateRefresh()),
   );
 });
@@ -481,6 +508,11 @@ const tabTitle = computed(
       <OpeningSelectPage />
     </div>
 
+    <div v-else-if="entryMode === 'checking'" class="pm-entry-checking" aria-label="正在读取聊天楼层">
+      <span class="checking-seal"><PmIcon name="candle" :size="22" /></span>
+      <p>正在翻阅当前纪事...</p>
+    </div>
+
     <TitleScreen
       v-else-if="entryMode === 'title'"
       :loading="titleLoading"
@@ -529,6 +561,42 @@ const tabTitle = computed(
   place-items: center;
   padding: 28px;
   min-height: 0;
+}
+
+.pm-entry-checking {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  width: 1080px;
+  height: 180px;
+  color: var(--pm-parch-soft);
+  background: var(--pm-app-bg);
+  font-family: var(--pm-font-display);
+  font-size: 12px;
+}
+
+.pm-entry-checking p {
+  margin: 0;
+}
+
+.checking-seal {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  color: var(--pm-gold-bright);
+  border: 1px solid var(--pm-dark-panel-border);
+  border-radius: 50%;
+  background: var(--pm-dark-panel);
+  animation: checking-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes checking-pulse {
+  50% {
+    filter: brightness(1.28);
+    transform: translateY(-2px);
+  }
 }
 
 .pm-style-guide-shell {
@@ -580,6 +648,10 @@ const tabTitle = computed(
 }
 
 @media (max-width: 760px) {
+  .pm-entry-checking {
+    width: 390px;
+  }
+
   .pm-style-guide-shell {
     padding: 0;
   }
