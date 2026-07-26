@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { useGameStore } from './stores/game';
 import TopHud from './components/TopHud.vue';
 import Sidebar from './components/Sidebar.vue';
 import BottomDock from './components/BottomDock.vue';
 import PmIcon from './components/PmIcon.vue';
 import ServiceTray from './components/ServiceTray.vue';
+import TitleScreen from './components/TitleScreen.vue';
 import { activateSameFloorMode, removeMarkedBranchFloors } from './utils/sameFloor';
 
 const game = useGameStore();
 const OpeningWorkshop = defineAsyncComponent(() => import('./components/OpeningWorkshop.vue'));
+const OpeningSelectPage = defineAsyncComponent(() => import('./pages/OpeningSelectPage.vue'));
 const ChroniclePage = defineAsyncComponent(() => import('./pages/ChroniclePage.vue'));
 const TavernPage = defineAsyncComponent(() => import('./pages/TavernPage.vue'));
 const OperationsPage = defineAsyncComponent(() => import('./pages/OperationsPage.vue'));
@@ -39,6 +41,9 @@ const mvuEventStops: EventOnReturn[] = [];
 const tavernEventStops: EventOnReturn[] = [];
 let mvuEventsRegistered = false;
 const STORY_FOCUS_EVENT = 'primordia:focus-latest-story';
+const entryMode = ref<'title' | 'opening' | 'main'>('title');
+const titleLoading = ref(false);
+const titleStatus = ref('');
 
 function stopEventListeners(stops: EventOnReturn[]) {
   stops.forEach(stop => {
@@ -265,6 +270,50 @@ async function focusLatestStoryView() {
   requestAnimationFrame(() => tryFocus());
 }
 
+function readLatestMessageId() {
+  const candidates = [
+    typeof getLastMessageId === 'function' ? getLastMessageId() : undefined,
+    typeof getCurrentMessageId === 'function' ? getCurrentMessageId() : undefined,
+  ];
+  const id = candidates.find(item => Number.isFinite(item));
+  return typeof id === 'number' ? id : 0;
+}
+
+async function enterMainInterface() {
+  entryMode.value = 'main';
+  await nextTick();
+  scheduleHostFrameSize();
+}
+
+async function enterOpeningCreator() {
+  entryMode.value = 'opening';
+  await nextTick();
+  scheduleHostFrameSize();
+}
+
+async function startFromTitle() {
+  if (titleLoading.value) return;
+  titleLoading.value = true;
+  titleStatus.value = '正在读取当前聊天楼层...';
+  try {
+    await refreshAuthoritativeState({ clearMissingShop: true });
+    const latestMessageId = readLatestMessageId();
+    if (latestMessageId <= 0) {
+      titleStatus.value = '检测到最新楼层为 0，进入开局创建。';
+      await enterOpeningCreator();
+      return;
+    }
+    titleStatus.value = `检测到最新楼层 #${latestMessageId}，继续进入主界面。`;
+    await enterMainInterface();
+  } catch (error) {
+    console.warn('[primordia] 标题页楼层检测失败:', error);
+    titleStatus.value = '楼层检测失败，已进入开局创建页。';
+    await enterOpeningCreator();
+  } finally {
+    titleLoading.value = false;
+  }
+}
+
 onMounted(() => {
   removeMarkedBranchFloors();
   deactivateSameFloorMode = activateSameFloorMode();
@@ -413,7 +462,18 @@ const tabTitle = computed(
       />
     </svg>
 
-    <div class="pm-shell">
+    <TitleScreen
+      v-if="entryMode === 'title'"
+      :loading="titleLoading"
+      :status="titleStatus"
+      @start="startFromTitle"
+    />
+
+    <div v-else-if="entryMode === 'opening'" class="pm-entry-shell">
+      <OpeningSelectPage @created="enterMainInterface" />
+    </div>
+
+    <div v-else class="pm-shell">
       <TopHud />
 
       <div class="pm-main">
@@ -440,11 +500,18 @@ const tabTitle = computed(
       <BottomDock />
     </div>
 
-    <ServiceTray />
+    <ServiceTray v-if="entryMode === 'main'" />
   </div>
 </template>
 
 <style scoped>
+.pm-entry-shell {
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  min-height: 0;
+}
+
 .crumbs {
   display: inline-flex;
   align-items: center;

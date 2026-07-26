@@ -9772,6 +9772,14 @@ export const useGameStore = defineStore('primordia', () => {
       if (nextTavernName && (!draft.tavern.name.trim() || draft.tavern.name.trim() === '铁壶酒馆')) draft.tavern.name = nextTavernName;
     }
 
+    let openingStatData: PrimordiaStatData;
+    try {
+      openingStatData = buildOpeningStatData(draft, bundle);
+    } catch (error) {
+      const message = describeHostError(error, '开局变量没有返回具体错误。');
+      throw new Error(`整理第 1 层变量失败：${message}`);
+    }
+
     let worldbookResult: Awaited<ReturnType<typeof writeOpeningWorldbook>>;
     try {
       worldbookResult = await writeOpeningWorldbook(draft, bundle);
@@ -9789,6 +9797,9 @@ export const useGameStore = defineStore('primordia', () => {
           {
             role: 'assistant',
             message,
+            data: {
+              stat_data: openingStatData,
+            },
             extra: {
               primordia: {
                 type: 'opening_story',
@@ -10406,13 +10417,39 @@ export const useGameStore = defineStore('primordia', () => {
   }
 
   function applyTavernStructureFromMvuData(data: PrimordiaStatData) {
-    const regionRoot = readRecordPath(data, ['酒馆.区域', '酒馆.区域状态']);
+    const rawRegionRoot = readFirstPath<any>(data, ['酒馆.区域', '酒馆.区域状态'], undefined);
+    const regionRoot = asRecord(rawRegionRoot);
+    const hasExplicitRegionRoot = rawRegionRoot && typeof rawRegionRoot === 'object' && !Array.isArray(rawRegionRoot);
+    const roomRoot = readRecordPath(data, ['酒馆.客房', '酒馆.房间']);
     let changed = false;
 
     const overview = String(readFirstPath(data, ['酒馆.整体概况', '酒馆.概况', '酒馆.overview'], '') || '').trim();
     if (overview && overview !== tavernOverview.value) {
       tavernOverview.value = overview;
       changed = true;
+    }
+
+    if (hasExplicitRegionRoot) {
+      const incomingRegionNames = new Set(Object.keys(regionRoot));
+      if (Object.keys(roomRoot).length > 0) incomingRegionNames.add('客房');
+
+      const previousRegionCount = regions.value.length;
+      regions.value = regions.value.filter(region => incomingRegionNames.has(region.name));
+      if (regions.value.length !== previousRegionCount) changed = true;
+
+      for (const regionName of Object.keys(temporaryStates.value.酒馆区域)) {
+        if (!incomingRegionNames.has(regionName)) {
+          delete temporaryStates.value.酒馆区域[regionName];
+          changed = true;
+        }
+      }
+
+      const previousMaintenanceCount = tavernMaintenance.value.length;
+      tavernMaintenance.value = tavernMaintenance.value.filter(entry => {
+        const formula = tavernStateFormulas.value.find(item => item.id === entry.formulaId);
+        return !formula?.targetRegion || incomingRegionNames.has(formula.targetRegion);
+      });
+      if (tavernMaintenance.value.length !== previousMaintenanceCount) changed = true;
     }
 
     for (const [regionName, raw] of Object.entries(regionRoot)) {
@@ -10467,7 +10504,6 @@ export const useGameStore = defineStore('primordia', () => {
       }
     }
 
-    const roomRoot = readRecordPath(data, ['酒馆.客房', '酒馆.房间']);
     const roomRegion = regions.value.find(region => region.id === 'rooms' || region.name === '客房');
     if (roomRegion && Object.keys(roomRoot).length > 0) {
       if (!roomRegion.rooms) roomRegion.rooms = [];

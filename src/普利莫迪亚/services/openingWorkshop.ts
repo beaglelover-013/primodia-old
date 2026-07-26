@@ -15,8 +15,9 @@ import {
   TURN_CONTEXT_WORLDBOOK_ENTRY_NAME,
   type TurnContextWorldbookBinding,
 } from './turnContextWorldbook';
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { recordFinalPromptDebugSnapshot } from '../utils/unifiedRequest';
+import { fixedOpeningInitvar, fixedOpeningInitvarYaml } from './fixedOpeningInitvarData';
 
 declare const generate:
   | undefined
@@ -1166,13 +1167,14 @@ ${tavernProfile?.profile ? stripOpeningForbiddenBlocks(tavernProfile.profile) : 
 }
 
 export function formatOpeningAssistantMessage(story: OpeningStoryDraft) {
-  return `<maintext>\n${story.maintext.trim()}\n</maintext>\n\n<option>\n1.开始我们的故事\n</option>`;
-}
-
-function omitOpeningInitvar<T extends { bundle: OpeningGenerationBundle }>(preset: T): T {
-  delete preset.bundle.story.initvar;
-  delete preset.bundle.story.initvarYaml;
-  return preset;
+  const message = `<maintext>\n${story.maintext.trim()}\n</maintext>\n\n<option>\n1.开始我们的故事\n</option>`;
+  const initvarYaml =
+    cleanText(story.initvarYaml) ||
+    (story.initvar && typeof story.initvar === 'object' && !Array.isArray(story.initvar)
+      ? stringifyYaml(story.initvar).trim()
+      : '');
+  if (!initvarYaml) return message;
+  return `${message}\n\n<UpdateVariable>\n<initvar>\n${initvarYaml}\n</initvar>\n</UpdateVariable>`;
 }
 
 function indentBlock(text: string, spaces = 4) {
@@ -1519,7 +1521,7 @@ export async function writeOpeningWorldbook(
   };
 }
 
-export function buildFixedOpeningPreset(worldbookName = '', keepInitvarForBranch = false): {
+export function buildFixedOpeningPreset(worldbookName = ''): {
   draft: OpeningWorkshopDraft;
   bundle: OpeningGenerationBundle;
 } {
@@ -1582,7 +1584,7 @@ export function buildFixedOpeningPreset(worldbookName = '', keepInitvarForBranch
     },
     tavern: {
       name: '铁壶酒馆',
-      territory: '韦斯托利亚',
+      territory: '普里莫迪亚',
       city: '布拉姆维克',
       place: '主厅接待区',
       status: '冷清，准备营业',
@@ -1591,8 +1593,8 @@ export function buildFixedOpeningPreset(worldbookName = '', keepInitvarForBranch
       funds: '拮据',
       stock: '稀少',
     },
-    era: '共栖历1303年',
-    region: '韦斯托利亚',
+    era: '匠星初燃',
+    region: '普里莫迪亚',
     theme: '固定开场白：橘柒应聘铁壶酒馆',
     worldbookName: worldbookName.trim(),
     moduleChoices: [],
@@ -1904,11 +1906,12 @@ export function buildFixedOpeningPreset(worldbookName = '', keepInitvarForBranch
         maintext: fixedMaintextWithLatestWeather,
         options: ['回应橘柒，确认招人还算数'],
         sum: '解冻月清晨，橘柒循着村口招人告示来到布拉姆维克的铁壶酒馆，向正在柜台后发呆的克斯询问“招人”是否还算数。',
-        initvar,
+        initvar: fixedOpeningInitvar('fox'),
+        initvarYaml: fixedOpeningInitvarYaml('fox'),
       },
     },
   };
-  return keepInitvarForBranch ? preset : omitOpeningInitvar(preset);
+  return preset;
 }
 
 const SHEEP_OPENING_MAINTEXT = `解冻月的阳光没有遮拦。天蓝得干净，刷过一样。阳光从东南方倾斜地倒下来，照在脸上白晃晃的——不全是阳光的功劳，是地上的融雪在帮它。布拉姆维克的积雪正在大面积崩溃，村口没铺石板的泥路变成了一条缓缓流动的浅泥河，车辙凹处积出深到脚踝的水洼，水面倒映着干干净净的天。屋檐在滴水，白桦枝在滴水，石墙根底下半融的冰碴子也在滴水，整个村子被一场只有声音没有雨滴的雨淋着。远处磨坊的水轮比前几天转得快了——溪水涨了——吱呀声在干净的空气里传出很远。
@@ -1947,7 +1950,7 @@ export function buildSheepOpeningPreset(worldbookName = ''): {
   draft: OpeningWorkshopDraft;
   bundle: OpeningGenerationBundle;
 } {
-  const preset = buildFixedOpeningPreset(worldbookName, true);
+  const preset = buildFixedOpeningPreset(worldbookName);
   const { draft, bundle } = preset;
   draft.tavern.story = '酿造师公会学徒绵暖背着木箱来到布拉姆维克村口的铁壶酒馆，还没来得及介绍自己，就被融雪午后的风吹乱了开场。';
   draft.tavern.funds = '6金币';
@@ -2000,7 +2003,9 @@ export function buildSheepOpeningPreset(worldbookName = ''): {
     备注:
       '绵暖是刚到韦斯托利亚不到一周的酿造师公会学徒，浅琥珀色横瞳，黑色面孔，粉色鼻尖，白色卷毛和向后弯卷的象牙白羊角很醒目。她受养母安排从小村庄开始拜访酒馆，嗅觉敏锐，闻到谷物、铁锅、油脂和焦炭味时会本能思考酿造或调味改良。她极度紧张，开场时被融雪午后的风吹乱，尚未成功说出自我介绍。偏好：温和交流、酿造、谷物香气、被认真听完；注意：木牌写着“请不要让我喝酒”。',
   };
-  return omitOpeningInitvar(preset);
+  bundle.story.initvar = fixedOpeningInitvar('sheep');
+  bundle.story.initvarYaml = fixedOpeningInitvarYaml('sheep');
+  return preset;
 }
 
 const DEER_OPENING_MAINTEXT = `解冻月的傍晚。太阳落到丘陵西面的白桦林顶上了，低角度的光线从树干之间斜过来，把布拉姆维克村口的石墙和融雪水洼都染成一层暖黄色。影子拉得很长——屋檐的影子横过泥路，石墙的影子爬上了对面的矮篱笆。空气比白天凉了一截，融雪的速度慢下来了，屋檐滴水的间隔变长了，每一滴落下来的声音都比白天更清晰。
@@ -2031,7 +2036,7 @@ export function buildDeerOpeningPreset(worldbookName = ''): {
   draft: OpeningWorkshopDraft;
   bundle: OpeningGenerationBundle;
 } {
-  const preset = buildFixedOpeningPreset(worldbookName, true);
+  const preset = buildFixedOpeningPreset(worldbookName);
   const { draft, bundle } = preset;
   draft.tavern.story = '解冻月的傍晚，走了很多天远路的鹿族旅人翠萱背着大帆布背包推门进来，向柜台后的克斯询问客房价格。';
   draft.tavern.funds = '6金币';
@@ -2086,7 +2091,9 @@ export function buildDeerOpeningPreset(worldbookName = ''): {
     备注:
       '翠萱是走了很多天远路的鹿族旅人，赤棕色短毛带白色斑点，腹侧渐变浅沙色，蜂蜜色横瞳，头顶约十五厘米的对称分叉鹿角，左角挂着一束干了很久的薄荷，右角挂着一束还没干透的新草药。她声音偏柔偏轻带着旅途的微哑，表情平静，习惯反复开合腰间挎包的金属搭扣。她刚卸下沉重的帆布背包，向柜台询问客房价格。偏好：安静、热食、能落脚的房间、草药相关的话题。',
   };
-  return omitOpeningInitvar(preset);
+  bundle.story.initvar = fixedOpeningInitvar('deer');
+  bundle.story.initvarYaml = fixedOpeningInitvarYaml('deer');
+  return preset;
 }
 
 const TWINS_OPENING_MAINTEXT = `门从外面被一把推开，门板撞在墙上闷闷一声。
@@ -2125,7 +2132,7 @@ export function buildTwinsOpeningPreset(worldbookName = ''): {
   draft: OpeningWorkshopDraft;
   bundle: OpeningGenerationBundle;
 } {
-  const preset = buildFixedOpeningPreset(worldbookName, true);
+  const preset = buildFixedOpeningPreset(worldbookName);
   const { draft, bundle } = preset;
   draft.tavern.story = '一对一模一样的兔族双子推门进了铁壶酒馆：姐姐莲洵进门就摸遍了前厅，趴上柜台连珠炮地问吃住；妹妹莲沁安静地站在半步后，只用眼睛看。';
   draft.tavern.funds = '6金币';
@@ -2198,7 +2205,9 @@ export function buildTwinsOpeningPreset(worldbookName = ''): {
     备注:
       '莲沁是莲家双子中的妹妹，和姐姐莲洵长着一模一样的脸：棕色短绒毛，圆脸，琥珀色大眼，头顶长兔耳。但性格截然相反——进门后什么都不摸，只用视线安静地走过整个空间，站在姐姐身侧半步后不说话，耳朵近乎静止，嘴唇自然合着。她观察力强，先看后动，话极少，负责管钱和收拾姐姐留下的摊子。偏好：安静、条理、观察人、姐姐吃饱后的样子。',
   };
-  return omitOpeningInitvar(preset);
+  bundle.story.initvar = fixedOpeningInitvar('twins');
+  bundle.story.initvarYaml = fixedOpeningInitvarYaml('twins');
+  return preset;
 }
 
 const SOLO_COOK_OPENING_MAINTEXT = `克斯从睡梦中醒来，迎接他新的一天。`;
@@ -2207,7 +2216,7 @@ export function buildSoloCookOpeningPreset(worldbookName = ''): {
   draft: OpeningWorkshopDraft;
   bundle: OpeningGenerationBundle;
 } {
-  const preset = buildFixedOpeningPreset(worldbookName, true);
+  const preset = buildFixedOpeningPreset(worldbookName);
   const { draft, bundle } = preset;
   draft.tavern.story = '克斯在解冻月清晨独自醒来，没有任何女主或陌生来客登场。他只想把铁壶酒馆收拾起来，靠做饭赚钱。';
   draft.tavern.funds = '6金币';
@@ -2248,7 +2257,7 @@ export function buildSoloCookOpeningPreset(worldbookName = ''): {
   initvar.农田与酒窖 = initvar.农田与酒窖 ?? { 农田: {}, 酒窖桶: {} };
   initvar.街坊商铺 = { 当前商铺: '' };
 
-  return omitOpeningInitvar(preset);
+  return preset;
 }
 
 export function buildOpeningFallbackStory(draft: OpeningWorkshopDraft) {
