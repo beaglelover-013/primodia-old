@@ -5374,7 +5374,7 @@ export const useGameStore = defineStore('primordia', () => {
     }
     loadedStoryCheckpoint.value = null;
     localStateDirty.value = false;
-    await writeChatSave(checkpoint);
+    await writeChatSave(checkpoint ?? undefined);
     return true;
   }
   function defaultLogMeta(kind: EngineLog['kind']): Pick<EngineLog, 'source' | 'authoritative' | 'tone'> {
@@ -5909,7 +5909,8 @@ export const useGameStore = defineStore('primordia', () => {
     const currentMapDetail = mapNodeDetails[currentMapId.value];
     return [
       openingSave.value?.region,
-      openingSave.value?.tavern?.territory,
+      openingSave.value?.tavernCity,
+      openingSave.value?.tavernPlace,
       location.region,
       location.place,
       currentMapId.value,
@@ -9831,7 +9832,10 @@ export const useGameStore = defineStore('primordia', () => {
 
     await writeChatSave({
       maintext: bundle.story.maintext,
-      options: bundle.story.options,
+      options: bundle.story.options.map((text, index) => ({
+        id: String.fromCharCode(65 + index),
+        text: String(text ?? '').trim(),
+      })).filter(option => option.text),
       sum: bundle.story.sum,
       messageId,
     });
