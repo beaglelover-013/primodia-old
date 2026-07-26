@@ -215,7 +215,7 @@ function assignWorkerToRegion(r: TavernRegion) {
     game.pushLog('提示', result.message);
     return;
   }
-  game.appendDraft(`我安排 ${worker.name} 前往「${r.name}」当值，观察她的反应和空间里的气氛变化。`, {
+  game.appendDraft(`我安排 ${worker.name} 前往「${r.name}」当值。`, {
     type: 'WORKER_ASSIGN',
     undoPatch: {
       type: 'WORKER_ASSIGN',

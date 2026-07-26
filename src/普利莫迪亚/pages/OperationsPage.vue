@@ -134,7 +134,7 @@ function recordDate(daySerial: number) {
           </header>
           <p>{{ formula.description }}</p>
           <div class="region-control">
-            <span>{{ formula.originalTargetRegion ? `AI写作：${formula.originalTargetRegion}` : '归属区域' }}</span>
+            <span>{{ formula.originalTargetRegion ? `原文区域：${formula.originalTargetRegion}` : '归属区域' }}</span>
             <select :value="formula.targetRegion" @change="game.setTavernStateFormulaRegion(formula.id, ($event.target as HTMLSelectElement).value)">
               <option v-if="!regionOptions.includes(formula.targetRegion)" :value="formula.targetRegion">{{ formula.targetRegion }}</option>
               <option v-for="region in regionOptions" :key="region" :value="region">{{ region }}</option>

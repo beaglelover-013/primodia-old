@@ -87,7 +87,7 @@ function logKindClass(kind: EngineLog['kind']) {
 function logSourceLabel(log: EngineLog) {
   if (log.source === 'player') return '玩家';
   if (log.source === 'engine') return '规则';
-  if (log.source === 'ai') return 'AI';
+  if (log.source === 'ai') return '正文';
   return '系统';
 }
 
@@ -101,7 +101,7 @@ function logSourceClass(log: EngineLog) {
 }
 
 function logTitle(log: EngineLog) {
-  return log.authoritative === false ? 'AI叙事: 只用于呈现，不作为规则存档。' : '本地界面记录: 只用于本次界面流程，不自动覆盖楼层变量。';
+  return log.authoritative === false ? '正文呈现: 只用于呈现，不作为规则存档。' : '本地界面记录: 只用于本次界面流程，不自动覆盖楼层变量。';
 }
 </script>
 

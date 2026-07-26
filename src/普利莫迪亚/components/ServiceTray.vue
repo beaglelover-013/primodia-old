@@ -150,7 +150,7 @@ onMounted(loadFabPosition);
         <header class="service-head">
           <div>
             <h2>服务托盘</h2>
-            <p>记录当前在店客人、点单和待上菜对象。AI 回填不到时，可以在这里手动补。</p>
+            <p>记录当前在店客人、点单和待上菜对象。正文没有回填时，可以在这里手动补。</p>
           </div>
           <button class="icon-btn" type="button" title="关闭" @click="open = false">
             <PmIcon name="x" :size="16" />

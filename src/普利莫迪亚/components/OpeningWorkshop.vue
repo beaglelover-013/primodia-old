@@ -964,7 +964,7 @@ watch(
               <label><span>开局主题</span><input v-model="world.theme" class="opening-input" /></label>
             </div>
             <div class="template-check">
-              <span>AI 开局模板：{{ OPENING_CHARACTER_TEMPLATE_ENTRY }} / {{ OPENING_TAVERN_TEMPLATE_ENTRY }} · {{ templateState }}</span>
+              <span>开局模板：{{ OPENING_CHARACTER_TEMPLATE_ENTRY }} / {{ OPENING_TAVERN_TEMPLATE_ENTRY }} · {{ templateState }}</span>
               <button class="opening-btn ghost sm" type="button" :disabled="!!loading" @click="checkTemplates">检查模板</button>
             </div>
             <div class="module-list">
@@ -1038,7 +1038,7 @@ watch(
                     v-model="characterTemplateText"
                     class="opening-textarea tall"
                   ></textarea>
-                  <div v-else class="empty-box">尚未生成。点击上方按钮后，AI 会先写入这份模板。</div>
+                  <div v-else class="empty-box">尚未生成。点击上方按钮后，会先写入这份模板。</div>
                 </label>
                 <label>
                   <span>{{ OPENING_TAVERN_TEMPLATE_ENTRY }}</span>
@@ -1047,7 +1047,7 @@ watch(
                     v-model="tavernTemplateText"
                     class="opening-textarea tall"
                   ></textarea>
-                  <div v-else class="empty-box">尚未生成。点击上方按钮后，AI 会先写入这份模板。</div>
+                  <div v-else class="empty-box">尚未生成。点击上方按钮后，会先写入这份模板。</div>
                 </label>
               </div>
               <div class="fixed-option">正式开局会先把人物档案、酒馆档案分别写入世界书，再生成开场白正文。</div>

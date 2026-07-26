@@ -90,7 +90,7 @@ resetDraft();
           <PmIcon name="people" :size="22" />
           常客簿
         </h2>
-        <div class="sub">老面孔、团体熟客和 AI 建议候选都在这里确认。</div>
+        <div class="sub">老面孔、团体熟客和故事候选都在这里确认。</div>
       </div>
       <div class="head-actions">
         <span class="pm-tag dim">已入簿 {{ confirmedCount }} 条</span>
@@ -105,7 +105,7 @@ resetDraft();
             <h3>待确认常客</h3>
             <span class="pm-tag dim">{{ game.regularGuestBookWorldbookStatus }}</span>
           </div>
-          <div v-if="!game.pendingRegularGuestUpdates.length" class="empty">还没有 AI 提出的常客候选。</div>
+          <div v-if="!game.pendingRegularGuestUpdates.length" class="empty">还没有新的常客候选。</div>
           <div v-for="guest in game.pendingRegularGuestUpdates" :key="guest.id" class="guest-row pending">
             <div class="guest-main">
               <strong>{{ guest.name }}</strong>

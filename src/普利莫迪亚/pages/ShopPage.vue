@@ -192,7 +192,7 @@ async function checkout() {
           <div>
             <p class="kicker">自由找店</p>
             <h2>你想去哪里</h2>
-            <p>写“卖种子的摊位”“玻璃和木桶”“冒险补给”“奇怪杂货”都可以。AI 会生成店名、店主、环境与货架商品，前端负责把这些商品装进当前货架。</p>
+            <p>写“卖种子的摊位”“玻璃和木桶”“冒险补给”“奇怪杂货”都可以。街坊会展开成具体店名、店主、环境与货架商品。</p>
           </div>
           <div class="free-input-row">
             <input
@@ -202,7 +202,7 @@ async function checkout() {
               @keydown.enter.prevent="requestFreeShop"
             />
             <button class="visit-btn" :disabled="game.isGenerating" @click="requestFreeShop">
-              {{ game.isGenerating ? '正在带路' : '让 AI 带路' }}
+              {{ game.isGenerating ? '正在带路' : '去看看' }}
             </button>
           </div>
           <div class="free-hints">
@@ -318,7 +318,7 @@ async function checkout() {
             <strong>{{ formatCopper(cartTotal) }}</strong>
           </div>
           <button class="checkout-btn" :disabled="cartItems.length === 0 || game.isGenerating" @click="checkout">
-            {{ game.isGenerating ? '叙事生成中' : '付钱并请 AI 叙述' }}
+            {{ game.isGenerating ? '正在结账' : '付钱带走' }}
           </button>
         </aside>
       </div>

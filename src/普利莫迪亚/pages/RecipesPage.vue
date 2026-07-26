@@ -79,7 +79,7 @@ function recipeSummary(recipe: RecipeEntry) {
           <PmIcon name="ledger" :size="22" />
           配方簿
         </h2>
-        <div class="sub">前端保存 · 纯本地复刻 · 不发送给 AI</div>
+        <div class="sub">前端保存 · 纯本地复刻 · 不写入本回合</div>
       </div>
       <div class="head-actions">
         <input v-model="searchText" class="pm-input recipe-search" placeholder="搜索配方、材料或标签" />

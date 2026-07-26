@@ -128,6 +128,7 @@ export type CapturedFormatTarget =
   | 'characterBehavior';
 
 export const COIN_PER_SILVER = 100;
+const STORY_FOCUS_EVENT = 'primordia:focus-latest-story';
 export const SILVER_PER_GOLD = 10;
 export const GOLD_PER_PLATINUM = 500;
 export const PLATINUM_PER_MITHRIL = 500;
@@ -12093,6 +12094,9 @@ export const useGameStore = defineStore('primordia', () => {
         localStateDirty.value = false;
         await writeChatSave(result.latest);
         removeMarkedBranchFloors();
+        if (!result.latest?.shop) {
+          window.dispatchEvent(new CustomEvent(STORY_FOCUS_EVENT));
+        }
         pushLog('叙事', 'AI叙述已写入楼层并刷新前端。', {
           source: 'ai',
           authoritative: false,

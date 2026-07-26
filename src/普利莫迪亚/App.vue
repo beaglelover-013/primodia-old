@@ -38,6 +38,7 @@ let queuedAuthoritativeRefreshOptions: { clearMissingShop?: boolean } | null = n
 const mvuEventStops: EventOnReturn[] = [];
 const tavernEventStops: EventOnReturn[] = [];
 let mvuEventsRegistered = false;
+const STORY_FOCUS_EVENT = 'primordia:focus-latest-story';
 
 function stopEventListeners(stops: EventOnReturn[]) {
   stops.forEach(stop => {
@@ -235,9 +236,39 @@ function handleAppWheel(event: WheelEvent) {
   }
 }
 
+async function focusLatestStoryView() {
+  game.currentTab = 'chronicle';
+  await nextTick();
+
+  const tryFocus = (attempt = 0) => {
+    const content = document.querySelector<HTMLElement>('.pm-content');
+    const story = document.querySelector<HTMLElement>('#page-chronicle .story-sheet');
+    const frame = window.frameElement as HTMLElement | null;
+    if (!story && attempt < 8) {
+      window.setTimeout(() => tryFocus(attempt + 1), 60);
+      return;
+    }
+
+    try {
+      frame?.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'smooth' });
+    } catch {
+      // Some host views reject cross-frame smooth scrolling; local scroll still works.
+    }
+
+    if (content) {
+      content.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+      return;
+    }
+    story?.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'smooth' });
+  };
+
+  requestAnimationFrame(() => tryFocus());
+}
+
 onMounted(() => {
   removeMarkedBranchFloors();
   deactivateSameFloorMode = activateSameFloorMode();
+  window.addEventListener(STORY_FOCUS_EVENT, focusLatestStoryView);
   window.addEventListener('wheel', handleAppWheel, { capture: true, passive: false });
   window.addEventListener('resize', scheduleHostFrameSize, { passive: true });
   nextTick(() => {
@@ -268,6 +299,7 @@ onMounted(() => {
 onUnmounted(() => {
   deactivateSameFloorMode?.();
   deactivateSameFloorMode = undefined;
+  window.removeEventListener(STORY_FOCUS_EVENT, focusLatestStoryView);
   window.removeEventListener('wheel', handleAppWheel, { capture: true });
   window.removeEventListener('resize', scheduleHostFrameSize);
   authoritativeRefreshTimers.forEach(timer => window.clearTimeout(timer));

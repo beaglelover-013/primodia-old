@@ -513,7 +513,7 @@ async function importSaveFile(event: Event) {
       <section v-show="activeSettingsSection === 'play'" class="settings-card pm-card npc-activity-card">
         <h3>约定备忘录</h3>
         <p class="pm-dim">
-          AI 在正文后写入 <code>&lt;promise_update&gt;</code> 时，前端会保存未来约定；到达触发时间后，会在本回合发送包里提醒一次。
+          正文后写入 <code>&lt;promise_update&gt;</code> 时，前端会保存未来约定；到达触发时间后，会在本回合发送包里提醒一次。
         </p>
         <div class="activity-status">
           <span class="pm-tag" :class="game.promiseMemos.some(memo => memo.status === 'pending') ? 'good' : 'warn'">
@@ -522,7 +522,7 @@ async function importSaveFile(event: Event) {
           <span>总计 {{ game.promiseMemos.length }} 条约定记录</span>
         </div>
         <div v-if="!game.promiseMemos.length" class="pm-empty mini">
-          暂无约定。之后 AI 写入未来承诺、预约或威胁时会自动出现在这里。
+          暂无约定。之后正文写入未来承诺、预约或威胁时会自动出现在这里。
         </div>
         <div v-else class="promise-list">
           <article v-for="memo in game.promiseMemos" :key="memo.id" class="promise-card">
@@ -663,7 +663,7 @@ async function importSaveFile(event: Event) {
         <label class="toggle-row">
           <span>
             <strong>正文流式显示</strong>
-            <small>开启后, AI 生成时正文会逐步浮现; 关闭后, 等完整回复结束再显示。</small>
+            <small>开启后，正文会逐步浮现；关闭后，等完整回复结束再显示。</small>
           </span>
           <button
             class="toggle-switch"
@@ -679,7 +679,7 @@ async function importSaveFile(event: Event) {
         </label>
         <label class="toggle-row">
           <span>
-            <strong>发送天气给 AI</strong>
+            <strong>天气进入叙事资料</strong>
             <small>关闭后顶部仍显示每日天气，但生成提示词不再附带天气描述。</small>
           </span>
           <button
@@ -803,7 +803,7 @@ async function importSaveFile(event: Event) {
             <PmIcon name="scroll" :size="12" /> 复制完整默认模板
           </button>
         </div>
-        <p class="pm-dim">默认模板只用于复制到世界书里修改，不参与运行；天气池全文不会进入变量总览，也不会发给 AI。</p>
+        <p class="pm-dim">默认模板只用于复制到世界书里修改，不参与运行；天气池全文不会进入变量总览，也不会写入本回合叙事资料。</p>
       </section>
 
       <section v-show="activeSettingsSection === 'worldbook'" class="settings-card pm-card npc-activity-card">
@@ -853,7 +853,7 @@ async function importSaveFile(event: Event) {
               :value="game.npcActivityMinSuccessTurns"
               @change="updateNpcActivityMinSuccessTurns"
             />
-            <small>距离上次刷新至少经过这么多个成功 AI 正文楼层；默认 2，填 0 表示只看时间。</small>
+            <small>距离上次刷新至少经过这么多个成功正文楼层；默认 2，填 0 表示只看时间。</small>
           </label>
         </div>
         <label class="pm-field compact activity-keep-field">

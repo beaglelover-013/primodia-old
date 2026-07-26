@@ -828,7 +828,7 @@ async function createWorldbookEntryForSelected() {
               </button>
             </div>
             <div v-if="selectedBehaviorGroups.length === 0" class="pm-empty mini">
-              暂无行为记忆。AI 学到稳定习惯后会自动写入，也可以在下面手动添加。
+              暂无行为记忆。正文里出现稳定习惯后会自动写入，也可以在下面手动添加。
             </div>
             <div v-else class="behavior-group-list compact">
               <section v-for="group in selectedBehaviorGroups" :key="group.region" class="behavior-group">
@@ -926,7 +926,7 @@ async function createWorldbookEntryForSelected() {
           <h3>衣柜 · {{ selected?.name ?? '未选择' }}</h3>
           <template v-if="selected">
             <p class="pm-dim">
-              前端维护完整衣柜库；AI 只读取「{{ selected.name }}_衣柜」里的今日一套穿搭。
+              前端维护完整衣柜库；本回合只读取「{{ selected.name }}_衣柜」里的今日一套穿搭。
             </p>
             <div v-if="wardrobeError" class="worldbook-error">{{ wardrobeError }}</div>
             <p v-if="wardrobeNotice" class="edit-notice">{{ wardrobeNotice }}</p>
