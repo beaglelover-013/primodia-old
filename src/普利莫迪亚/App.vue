@@ -29,6 +29,7 @@ const FarmBrewPage = defineAsyncComponent(() => import('./pages/FarmBrewPage.vue
 const LogisticsPage = defineAsyncComponent(() => import('./pages/LogisticsPage.vue'));
 const VariablesPage = defineAsyncComponent(() => import('./pages/VariablesPage.vue'));
 const SettingsPage = defineAsyncComponent(() => import('./pages/SettingsPage.vue'));
+const StyleGuidePage = defineAsyncComponent(() => import('./pages/StyleGuidePage.vue'));
 
 let hostFrameObserver: ResizeObserver | null = null;
 let hostFrameRaf = 0;
@@ -44,6 +45,8 @@ const STORY_FOCUS_EVENT = 'primordia:focus-latest-story';
 const entryMode = ref<'title' | 'opening' | 'main'>('title');
 const titleLoading = ref(false);
 const titleStatus = ref('');
+const styleGuidePreview = ref(window.location.hash === '#ui-kit');
+const openingPagePreview = ref(window.location.hash === '#opening-preview');
 
 function stopEventListeners(stops: EventOnReturn[]) {
   stops.forEach(stop => {
@@ -134,6 +137,12 @@ function scheduleAuthoritativeStateRetries() {
       scheduleAuthoritativeStateRefresh({ clearMissingShop: true }, 0);
     }, delay),
   );
+}
+
+function syncStyleGuidePreviewHash() {
+  styleGuidePreview.value = window.location.hash === '#ui-kit';
+  openingPagePreview.value = window.location.hash === '#opening-preview';
+  nextTick(scheduleHostFrameSize);
 }
 
 async function registerMvuStateSyncEvents() {
@@ -318,6 +327,7 @@ onMounted(() => {
   removeMarkedBranchFloors();
   deactivateSameFloorMode = activateSameFloorMode();
   window.addEventListener(STORY_FOCUS_EVENT, focusLatestStoryView);
+  window.addEventListener('hashchange', syncStyleGuidePreviewHash);
   window.addEventListener('wheel', handleAppWheel, { capture: true, passive: false });
   window.addEventListener('resize', scheduleHostFrameSize, { passive: true });
   nextTick(() => {
@@ -349,6 +359,7 @@ onUnmounted(() => {
   deactivateSameFloorMode?.();
   deactivateSameFloorMode = undefined;
   window.removeEventListener(STORY_FOCUS_EVENT, focusLatestStoryView);
+  window.removeEventListener('hashchange', syncStyleGuidePreviewHash);
   window.removeEventListener('wheel', handleAppWheel, { capture: true });
   window.removeEventListener('resize', scheduleHostFrameSize);
   authoritativeRefreshTimers.forEach(timer => window.clearTimeout(timer));
@@ -462,8 +473,16 @@ const tabTitle = computed(
       />
     </svg>
 
+    <div v-if="styleGuidePreview" class="pm-style-guide-shell">
+      <StyleGuidePage />
+    </div>
+
+    <div v-else-if="openingPagePreview" class="pm-style-guide-shell">
+      <OpeningSelectPage />
+    </div>
+
     <TitleScreen
-      v-if="entryMode === 'title'"
+      v-else-if="entryMode === 'title'"
       :loading="titleLoading"
       :status="titleStatus"
       @start="startFromTitle"
@@ -512,6 +531,14 @@ const tabTitle = computed(
   min-height: 0;
 }
 
+.pm-style-guide-shell {
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  min-height: 0;
+  background: var(--pm-app-bg);
+}
+
 .crumbs {
   display: inline-flex;
   align-items: center;
@@ -553,6 +580,10 @@ const tabTitle = computed(
 }
 
 @media (max-width: 760px) {
+  .pm-style-guide-shell {
+    padding: 0;
+  }
+
   .crumbs {
     display: none;
   }

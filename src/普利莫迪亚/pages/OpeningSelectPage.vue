@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import PmIcon from '../components/PmIcon.vue';
+import creatorBoardImage from '../assets/primordia-creator-board-v2.png?url';
+import titleBoardImage from '../assets/primordia-title-board-v2.png?url';
 import { useGameStore } from '../stores/game';
 import {
   buildDeerOpeningPreset,
@@ -15,63 +17,66 @@ const emit = defineEmits<{
 }>();
 
 const game = useGameStore();
-
 const worldbooks = ref<string[]>([]);
 const worldbookName = ref('');
+const selectedOpeningId = ref('fox-applicant');
 const loading = ref('');
 const notice = ref('');
 const error = ref('');
 const displayedProtagonistName = computed(() => game.currentHostPersonaName() || game.protagonist.name || '克斯');
 const displayedTavernName = computed(() => game.tavernName || '铁壶酒馆');
 
-const creationSteps = [
-  { icon: 'people', title: '主角登记', text: '姓名、种族、出身、外观与第一天的状态。' },
-  { icon: 'tavern', title: '酒馆档案', text: '招牌、位置、资金、库房、区域和经营风格。' },
-  { icon: 'ledger', title: '开场楼层', text: '把正文、选项和初始化变量写入聊天楼层。' },
-];
-
 const openings = computed(() => [
   {
     id: 'fox-applicant',
-    title: '橘柒来应聘',
-    badge: '推荐',
-    icon: 'people',
+    title: '清晨的求职者',
+    heroine: '橘柒',
+    race: '狐族',
+    time: '解冻月 · 清晨',
+    image: 'https://files.catbox.moe/0ld4p2.png',
     summary: `清晨的${displayedTavernName.value}还没正式营业，橘柒推门进来，问门口那句“招人”还算不算数。`,
-    details: [displayedProtagonistName.value, displayedTavernName.value, '橘柒'],
   },
   {
     id: 'sheep-brewer',
-    title: '绵暖来访',
-    badge: '酿造',
-    icon: 'farm',
-    summary: `解冻月正午，酿造师公会学徒绵暖来到${displayedTavernName.value}，刚要自我介绍就被融雪风吹乱了开场。`,
-    details: [displayedProtagonistName.value, '绵暖', '酿造师公会'],
+    title: '酿造师来访',
+    heroine: '绵暖',
+    race: '羊族',
+    time: '解冻月 · 正午',
+    image: 'https://files.catbox.moe/j42erz.png',
+    summary: `酿造师公会学徒绵暖来到${displayedTavernName.value}，刚要自我介绍就被融雪风吹乱了开场。`,
   },
   {
     id: 'deer-traveler',
-    title: '翠萱来投宿',
-    badge: '旅人',
-    icon: 'map',
-    summary: `解冻月的傍晚，走了远路的鹿族旅人翠萱背着大帆布背包推开${displayedTavernName.value}的门，询问客房价格。`,
-    details: ['翠萱', '傍晚', '客房'],
+    title: '远路旅人',
+    heroine: '翠萱',
+    race: '鹿族',
+    time: '解冻月 · 傍晚',
+    image: 'https://files.catbox.moe/t2r08i.png',
+    summary: `走了远路的鹿族旅人翠萱背着大帆布背包推开${displayedTavernName.value}的门，询问客房价格。`,
   },
   {
     id: 'rabbit-twins',
     title: '莲家双子上门',
-    badge: '热闹',
-    icon: 'heart',
+    heroine: '莲洵与莲沁',
+    race: '兔族',
+    time: '解冻月 · 午后',
+    image: 'https://i.postimg.cc/mZ1YBg4j/lian-jia-shuang-zi.png',
     summary: `兔族双子推开${displayedTavernName.value}的门：姐姐莲洵连珠炮地问吃住，妹妹莲沁安静地站在半步后。`,
-    details: ['莲洵', '莲沁', '午后'],
   },
   {
     id: 'solo-cook',
-    title: '单人开局',
-    badge: '经营',
-    icon: 'pot',
-    summary: `没有女主相遇。${displayedProtagonistName.value}从睡梦中醒来，迎接${displayedTavernName.value}的新一天。`,
-    details: [displayedProtagonistName.value, '厨房', '清晨'],
+    title: '独自经营',
+    heroine: '不指定女主',
+    race: '自由开局',
+    time: '解冻月 · 清晨',
+    image: '',
+    summary: `没有预设相遇。${displayedProtagonistName.value}从睡梦中醒来，独自迎接${displayedTavernName.value}的新一天。`,
   },
 ]);
+
+const selectedOpening = computed(
+  () => openings.value.find(item => item.id === selectedOpeningId.value) ?? openings.value[0],
+);
 
 function refreshWorldbooks() {
   worldbooks.value = game.availableOpeningWorldbooks();
@@ -106,7 +111,7 @@ async function chooseOpening(id: string) {
               ? buildSoloCookOpeningPreset(worldbookName.value)
               : buildFixedOpeningPreset(worldbookName.value);
     await game.confirmOpeningWorkshop(draft, bundle);
-    notice.value = `${openingLabels[id] ?? '开场'}已创建，已经进入编年录。`;
+    notice.value = `${openingLabels[id] ?? '开场'}已创建，正在进入编年录。`;
     window.setTimeout(() => emit('created'), 420);
   } catch (err) {
     error.value = err instanceof Error ? err.message : '开场创建失败。';
@@ -119,385 +124,733 @@ onMounted(refreshWorldbooks);
 </script>
 
 <template>
-  <section id="page-opening" class="opening-create-page" aria-label="开局创建页面">
-    <div class="opening-shell">
-      <aside class="opening-ledger">
-        <div class="ledger-mark">
-          <PmIcon name="ledger" :size="34" />
+  <section
+    id="page-opening"
+    class="opening-stage"
+    :style="{ backgroundImage: `url(${creatorBoardImage})` }"
+    aria-label="开局创建页面"
+  >
+    <header class="opening-title">
+      <span>OPENING CHAPTER</span>
+      <h1>选择你的开场</h1>
+    </header>
+
+    <main class="opening-browser">
+      <div class="opening-intro">
+        <span class="number-seal">壹</span>
+        <div>
+          <small>五段相遇，五种故事的起点</small>
+          <h2>今晨，谁会推开酒馆的门？</h2>
         </div>
-        <p class="overline">Opening Desk</p>
-        <h1>开局创建</h1>
-        <p class="ledger-copy">
-          这里先放置缺省创建流程。后续可以继续扩展人物登记、酒馆设定、模块选择与自定义开场。
-        </p>
+      </div>
 
-        <label class="worldbook-picker">
-          <span>写入世界书</span>
-          <select v-model="worldbookName" class="pm-input">
-            <option value="">请选择</option>
-            <option v-for="name in worldbooks" :key="name" :value="name">{{ name }}</option>
-          </select>
-        </label>
+      <div class="opening-choice-grid" aria-label="开场选择">
+        <button
+          v-for="item in openings"
+          :key="item.id"
+          class="opening-choice"
+          :class="{ selected: selectedOpeningId === item.id }"
+          :aria-pressed="selectedOpeningId === item.id"
+          type="button"
+          @click="selectedOpeningId = item.id"
+        >
+          <span class="portrait-slot">
+            <img v-if="item.image" :src="item.image" :alt="item.heroine" />
+            <span
+              v-else
+              class="portrait-placeholder"
+              :style="{ backgroundImage: `url(${titleBoardImage})` }"
+            >
+              <span class="solo-emblem"><PmIcon name="tavern" :size="28" /></span>
+              <strong>无预设相遇</strong>
+            </span>
+            <span class="choice-gem"></span>
+          </span>
+          <span class="choice-copy">
+            <small>{{ item.race }}</small>
+            <strong>{{ item.heroine }}</strong>
+            <span>{{ item.title }}</span>
+          </span>
+        </button>
+      </div>
 
-        <div class="step-list">
-          <article v-for="(step, index) in creationSteps" :key="step.title" class="step-item">
-            <span class="step-index">{{ index + 1 }}</span>
-            <PmIcon :name="step.icon" :size="17" />
-            <div>
-              <strong>{{ step.title }}</strong>
-              <p>{{ step.text }}</p>
-            </div>
-          </article>
+      <p class="mobile-summary">{{ selectedOpening.summary }}</p>
+    </main>
+
+    <aside class="opening-detail">
+      <span class="detail-kicker">SELECTED OPENING</span>
+      <h2>{{ selectedOpening.heroine }}</h2>
+      <p class="detail-title">{{ selectedOpening.title }}</p>
+      <div class="detail-rule"></div>
+      <dl>
+        <div>
+          <dt>种族</dt>
+          <dd>{{ selectedOpening.race }}</dd>
         </div>
-      </aside>
-
-      <main class="opening-main">
-        <header class="opening-head">
-          <div>
-            <p>酒馆纪事_普里莫迪亚</p>
-            <h2>{{ displayedTavernName }} · 第一页登记</h2>
-          </div>
-          <button class="refresh-btn" type="button" :disabled="!!loading" title="刷新世界书列表" @click="refreshWorldbooks">
-            <PmIcon name="gear" :size="16" />
-          </button>
-        </header>
-
-        <div class="status-strip" :class="{ bad: error, good: notice }">
-          <PmIcon :name="error ? 'x' : notice ? 'plus' : 'candle'" :size="16" />
-          <span>{{ error || notice || loading || '选择一个缺省开场，即可生成第 1 层正文和初始化变量。' }}</span>
+        <div>
+          <dt>时间</dt>
+          <dd>{{ selectedOpening.time }}</dd>
         </div>
+      </dl>
+      <p class="detail-summary">{{ selectedOpening.summary }}</p>
+      <span class="selection-state"><i></i> 已选中</span>
+    </aside>
 
-        <div class="opening-grid">
-          <article v-for="item in openings" :key="item.id" class="opening-card">
-            <div class="card-top">
-              <span>{{ item.badge }}</span>
-              <PmIcon :name="item.icon" :size="18" />
-            </div>
-            <h3>{{ item.title }}</h3>
-            <p>{{ item.summary }}</p>
-            <div class="detail-row">
-              <span v-for="detail in item.details" :key="detail">{{ detail }}</span>
-            </div>
-            <button class="pm-btn" :disabled="!!loading" type="button" @click="chooseOpening(item.id)">
-              使用这个开场
-            </button>
-          </article>
-        </div>
-      </main>
+    <div class="worldbook-control">
+      <label for="opening-worldbook">写入世界书</label>
+      <select id="opening-worldbook" v-model="worldbookName" :disabled="!!loading">
+        <option value="">请选择世界书</option>
+        <option v-for="name in worldbooks" :key="name" :value="name">{{ name }}</option>
+      </select>
+      <button
+        type="button"
+        :disabled="!!loading"
+        aria-label="刷新世界书列表"
+        title="刷新世界书列表"
+        @click="refreshWorldbooks"
+      >
+        <PmIcon name="gear" :size="16" />
+      </button>
     </div>
+
+    <p class="opening-status" :class="{ bad: error, good: notice }" aria-live="polite">
+      {{ error || notice || loading || selectedOpening.summary }}
+    </p>
+
+    <nav class="opening-steps" aria-label="当前开局流程">
+      <span class="active">01 · 选择开场</span>
+      <span>02 · 确认人物</span>
+      <span>03 · 开始纪事</span>
+    </nav>
+
+    <button
+      class="confirm-button"
+      type="button"
+      :disabled="!!loading || !worldbookName"
+      @click="chooseOpening(selectedOpening.id)"
+    >
+      <i class="mobile-button-skin" :style="{ backgroundImage: `url(${titleBoardImage})` }"></i>
+      <span>{{ loading || '使用这个开场' }}</span>
+      <PmIcon name="scroll" :size="18" />
+    </button>
   </section>
 </template>
 
 <style scoped>
-.opening-create-page {
-  display: grid;
-  place-items: center;
-  color: var(--pm-ink);
-}
-
-.opening-shell {
-  display: grid;
-  grid-template-columns: 328px 748px;
-  gap: 18px;
-  width: 1120px;
-  height: 720px;
-  padding: 18px;
-  overflow: hidden;
-  border: 1px solid var(--pm-edge);
-  border-radius: 8px;
-  background:
-    radial-gradient(circle at 22% 10%, rgba(255, 223, 151, 0.14), transparent 260px),
-    linear-gradient(180deg, rgba(53, 35, 18, 0.95), rgba(17, 10, 5, 0.98));
-  box-shadow: var(--pm-shadow-deep), inset 0 0 0 1px rgba(255, 242, 198, 0.08);
-}
-
-.opening-ledger,
-.opening-main {
+.opening-stage {
+  --ink: #4b2b16;
+  --ink-soft: #80603c;
+  --green: #173e2b;
+  --gold: #c5892f;
+  --gold-light: #f1c86f;
   position: relative;
+  width: 1080px;
+  height: 720px;
   overflow: hidden;
-  border: 1px solid rgba(155, 113, 54, 0.48);
-  border-radius: 7px;
-  box-shadow: var(--pm-shadow-paper);
-}
-
-.opening-ledger {
-  padding: 26px 24px;
-  background: var(--pm-grad-parchment);
-}
-
-.opening-ledger::after {
-  content: '';
-  position: absolute;
-  left: 18px;
-  right: 18px;
-  bottom: 18px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(114, 78, 32, 0.55), transparent);
-}
-
-.ledger-mark {
-  display: grid;
-  place-items: center;
-  width: 62px;
-  height: 62px;
-  margin-bottom: 22px;
-  border: 1px solid rgba(117, 78, 29, 0.52);
-  border-radius: 50%;
-  background: rgba(255, 247, 220, 0.56);
-  color: var(--pm-gold-mud);
-}
-
-.overline,
-.opening-head p {
-  margin: 0 0 8px;
-  font-family: var(--pm-font-display);
-  font-size: 11px;
-  letter-spacing: 0.18em;
-  color: var(--pm-ink-fade);
-  text-transform: uppercase;
-}
-
-.opening-ledger h1 {
-  margin: 0 0 14px;
-  font-family: var(--pm-font-display);
-  font-size: 34px;
-}
-
-.ledger-copy {
-  margin: 0 0 22px;
-  color: var(--pm-ink-soft);
-  line-height: 1.85;
-  font-size: 14px;
-}
-
-.worldbook-picker {
-  display: grid;
-  gap: 8px;
-  margin-bottom: 24px;
-  color: var(--pm-ink-fade);
-  font-size: 13px;
-}
-
-.worldbook-picker select {
-  width: 258px;
-}
-
-.step-list {
-  display: grid;
-  gap: 10px;
-}
-
-.step-item {
-  display: grid;
-  grid-template-columns: 26px 22px 1fr;
-  gap: 9px;
-  align-items: start;
-  padding: 10px;
-  border: 1px solid rgba(111, 78, 37, 0.2);
+  border: 2px solid #41220e;
   border-radius: 6px;
-  background: rgba(255, 248, 225, 0.42);
+  color: var(--ink);
+  background-color: #6c3513;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 1080px 720px;
+  box-shadow:
+    0 0 0 3px #a16826,
+    0 0 0 6px #3c210e,
+    0 22px 70px rgba(20, 9, 3, 0.58);
+  isolation: isolate;
+  font-family: "Noto Serif SC", "Songti SC", SimSun, serif;
 }
 
-.step-index {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--pm-dark-panel-solid);
-  color: var(--pm-gold-bright);
-  font-family: var(--pm-font-num);
-  font-size: 11px;
+.opening-stage,
+.opening-stage * {
+  box-sizing: border-box;
 }
 
-.step-item strong {
+button,
+select {
+  font: inherit;
+}
+
+button:focus-visible,
+select:focus-visible {
+  outline: 3px solid #fff0b1;
+  outline-offset: 3px;
+}
+
+.opening-title {
+  position: absolute;
+  left: 326px;
+  top: 76px;
+  width: 205px;
+  color: #f0d7a1;
+  text-align: center;
+  text-shadow: 0 2px 3px #37190a;
+}
+
+.opening-title span {
   display: block;
-  margin-bottom: 3px;
-  color: var(--pm-ink);
-  font-size: 14px;
+  color: #c69955;
+  font-family: Georgia, serif;
+  font-size: 8px;
+  letter-spacing: 0.16em;
 }
 
-.step-item p {
-  margin: 0;
-  color: var(--pm-ink-fade);
-  font-size: 12px;
-  line-height: 1.55;
+.opening-title h1 {
+  margin: 4px 0 0;
+  font-size: 18px;
 }
 
-.opening-main {
-  padding: 22px;
-  background:
-    linear-gradient(180deg, rgba(255, 247, 220, 0.74), rgba(255, 247, 220, 0.08)),
-    var(--pm-grad-parchment);
+.opening-browser {
+  position: absolute;
+  left: 151px;
+  top: 128px;
+  width: 550px;
 }
 
-.opening-head {
+.opening-intro {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 14px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid rgba(111, 78, 37, 0.22);
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 13px;
 }
 
-.opening-head h2 {
-  margin: 0;
-  font-family: var(--pm-font-display);
-  font-size: 25px;
-}
-
-.refresh-btn {
+.number-seal {
   display: grid;
   place-items: center;
   width: 34px;
   height: 34px;
-  border: 1px solid rgba(101, 70, 30, 0.46);
-  border-radius: 5px;
-  background: rgba(255, 248, 225, 0.65);
-  color: var(--pm-ink);
-  cursor: pointer;
-  transition: transform 160ms ease, background 160ms ease;
-}
-
-.refresh-btn:hover:not(:disabled) {
-  transform: translateY(-1px) rotate(12deg);
-  background: rgba(255, 248, 225, 0.95);
-}
-
-.status-strip {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  height: 38px;
-  margin-bottom: 14px;
-  padding: 0 12px;
-  border: 1px solid var(--pm-line-soft);
-  border-radius: 6px;
-  background: rgba(255, 248, 225, 0.58);
-  color: var(--pm-ink-soft);
+  flex: 0 0 34px;
+  color: #f4dba1;
+  border-radius: 50%;
+  background: #713426;
+  box-shadow:
+    inset 0 0 0 2px #9e4b32,
+    inset 0 0 0 4px #572418,
+    0 2px 3px rgba(63, 28, 9, 0.35);
   font-size: 13px;
 }
 
-.status-strip.good {
-  border-color: rgba(90, 132, 76, 0.45);
-  color: #355a2d;
+.opening-intro small {
+  color: #9b7042;
+  font-size: 8px;
 }
 
-.status-strip.bad {
-  border-color: rgba(147, 67, 55, 0.45);
-  color: #7a3027;
+.opening-intro h2 {
+  margin: 2px 0 0;
+  font-size: 17px;
 }
 
-.opening-grid {
+.opening-choice-grid {
   display: grid;
-  grid-template-columns: 222px 222px 222px;
-  gap: 12px;
-  height: 518px;
-  overflow: auto;
-  padding-right: 8px;
+  grid-template-columns: repeat(5, 102px);
+  gap: 8px;
 }
 
-.opening-card {
-  display: flex;
-  flex-direction: column;
+.opening-choice {
+  position: relative;
+  display: grid;
+  grid-template-rows: 216px 76px;
+  width: 102px;
+  height: 292px;
+  padding: 0;
+  overflow: hidden;
+  color: var(--ink);
+  border: 1px solid #9f7039;
+  border-radius: 2px;
+  background: rgba(247, 222, 172, 0.84);
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 242, 198, 0.6),
+    0 3px 5px rgba(74, 37, 12, 0.24);
+  cursor: pointer;
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease,
+    border-color 150ms ease;
+}
+
+.opening-choice:hover {
+  z-index: 2;
+  transform: translateY(-3px);
+  border-color: #c18a3a;
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 242, 198, 0.72),
+    0 8px 12px rgba(74, 37, 12, 0.32);
+}
+
+.opening-choice.selected {
+  color: #f2ddb0;
+  border-color: #d7a64b;
+  background: #1b4631;
+  box-shadow:
+    inset 0 0 0 2px #0d2d1e,
+    inset 0 0 0 4px rgba(218, 169, 76, 0.42),
+    0 5px 9px rgba(60, 29, 8, 0.35);
+}
+
+.portrait-slot {
+  position: relative;
+  display: block;
+  margin: 5px 5px 0;
+  overflow: hidden;
+  border: 1px solid #a97a40;
+  background: #d8b97c;
+  box-shadow: inset 0 0 0 2px rgba(255, 237, 186, 0.55);
+}
+
+.portrait-slot img {
+  display: block;
+  width: 90px;
+  height: 210px;
+  object-fit: cover;
+  object-position: center top;
+}
+
+.portrait-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
   gap: 10px;
-  height: 246px;
-  padding: 14px;
-  border: 1px solid rgba(124, 83, 32, 0.35);
-  border-radius: 7px;
-  background:
-    linear-gradient(135deg, rgba(255, 251, 231, 0.54), transparent 42%),
-    rgba(255, 248, 225, 0.58);
-  box-shadow: 0 8px 18px -14px rgba(51, 29, 10, 0.62);
-  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+  color: #f4dda7;
+  background-color: #253e2d;
+  background-position: 51% 42%;
+  background-size: 350px 233px;
+  text-align: center;
+  text-shadow: 0 2px 4px #182014;
 }
 
-.opening-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(158, 106, 38, 0.65);
-  box-shadow: 0 14px 26px -18px rgba(51, 29, 10, 0.8);
+.portrait-placeholder::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 48, 33, 0.56);
 }
 
-.card-top,
-.detail-row {
+.portrait-placeholder strong,
+.solo-emblem {
+  position: relative;
+  z-index: 1;
+}
+
+.portrait-placeholder strong {
+  font-size: 10px;
+}
+
+.solo-emblem {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  margin: auto;
+  border: 1px solid #d8a94f;
+  border-radius: 50%;
+  background: rgba(28, 61, 42, 0.88);
+}
+
+.choice-gem {
+  position: absolute;
+  right: 7px;
+  top: 7px;
+  width: 9px;
+  height: 9px;
+  border: 1px solid rgba(109, 74, 30, 0.7);
+  background: rgba(255, 239, 184, 0.62);
+  transform: rotate(45deg);
+}
+
+.opening-choice.selected .choice-gem {
+  border-color: #ffe19a;
+  background: #df9e36;
+  box-shadow: 0 0 7px rgba(236, 179, 65, 0.78);
+}
+
+.choice-copy {
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  padding: 5px 4px;
+  text-align: center;
+}
+
+.choice-copy small {
+  color: #9a7349;
+  font-size: 8px;
+}
+
+.choice-copy strong {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.choice-copy > span {
+  color: #85613e;
+  font-size: 8px;
+}
+
+.opening-choice.selected .choice-copy small,
+.opening-choice.selected .choice-copy > span {
+  color: #c9b98e;
+}
+
+.mobile-summary {
+  display: none;
+}
+
+.opening-detail {
+  position: absolute;
+  left: 761px;
+  top: 136px;
+  width: 205px;
+  color: #5a351d;
+  text-align: center;
+}
+
+.detail-kicker {
+  color: #987043;
+  font-family: Georgia, serif;
+  font-size: 8px;
+  letter-spacing: 0.14em;
+}
+
+.opening-detail h2 {
+  margin: 11px 0 0;
+  font-size: 23px;
+}
+
+.detail-title {
+  margin: 6px 0 0;
+  color: #8e653d;
+  font-size: 11px;
+}
+
+.detail-rule {
+  width: 72px;
+  height: 1px;
+  margin: 17px auto;
+  background: #c39a61;
+}
+
+.opening-detail dl {
+  margin: 0;
+  font-size: 10px;
+}
+
+.opening-detail dl div {
   display: flex;
+  justify-content: space-between;
+  padding: 7px 14px;
+  border-bottom: 1px solid rgba(151, 102, 49, 0.2);
+}
+
+.opening-detail dt {
+  color: #8e6941;
+}
+
+.opening-detail dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.detail-summary {
+  margin: 18px 13px 0;
+  color: #76563a;
+  font-size: 10px;
+  line-height: 1.75;
+}
+
+.selection-state {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
+  margin-top: 18px;
+  color: #356343;
+  font-size: 9px;
+  font-weight: 700;
 }
 
-.card-top {
-  justify-content: space-between;
-  color: var(--pm-ink-fade);
+.selection-state i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4d8b5d;
+  box-shadow: 0 0 5px rgba(61, 121, 76, 0.55);
 }
 
-.card-top span {
-  padding: 3px 8px;
-  border: 1px solid rgba(111, 78, 37, 0.22);
-  border-radius: 999px;
-  background: rgba(255, 248, 225, 0.64);
-  color: var(--pm-gold-mud);
-  font-size: 11px;
+.worldbook-control {
+  position: absolute;
+  left: 153px;
+  top: 446px;
+  display: grid;
+  grid-template-columns: 78px 330px 32px;
+  align-items: center;
+  gap: 8px;
+  width: 472px;
+  height: 42px;
+  color: #6f4a28;
+  font-size: 10px;
 }
 
-.opening-card h3 {
+.worldbook-control label {
+  font-weight: 700;
+}
+
+.worldbook-control select {
+  width: 330px;
+  height: 32px;
+  padding: 0 30px 0 10px;
+  color: #57361e;
+  border: 1px solid #9d6b32;
+  border-radius: 3px;
+  background: rgba(248, 226, 180, 0.92);
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 244, 210, 0.55),
+    0 2px 3px rgba(76, 40, 13, 0.18);
+}
+
+.worldbook-control button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: #f0d89c;
+  border: 1px solid #ad7731;
+  border-radius: 50%;
+  background: #294b36;
+  cursor: pointer;
+}
+
+.worldbook-control button:hover:not(:disabled) {
+  color: #fff0b2;
+  transform: rotate(18deg);
+}
+
+.opening-status {
+  position: absolute;
+  left: 153px;
+  top: 494px;
+  width: 500px;
   margin: 0;
-  font-family: var(--pm-font-display);
+  color: #80603c;
+  font-size: 9px;
+}
+
+.opening-status.good {
+  color: #356343;
+}
+
+.opening-status.bad {
+  color: #8a3429;
+}
+
+.opening-steps {
+  position: absolute;
+  left: 132px;
+  top: 557px;
+  display: grid;
+  grid-template-columns: repeat(3, 168px);
+  height: 69px;
+}
+
+.opening-steps span {
+  display: grid;
+  place-items: center;
+  color: #65401f;
+  font-size: 12px;
+  font-weight: 700;
+  text-shadow: 0 1px rgba(255, 241, 194, 0.65);
+}
+
+.opening-steps span:nth-child(2) {
+  color: #f1dba3;
+  text-shadow: 0 2px #173121;
+}
+
+.confirm-button {
+  position: absolute;
+  left: 711px;
+  top: 553px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 314px;
+  height: 77px;
+  padding: 0;
+  color: #f5e2b5;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+  isolation: isolate;
   font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-shadow:
+    0 2px #112519,
+    0 3px 5px rgba(0, 0, 0, 0.42);
+  transition:
+    filter 160ms ease,
+    transform 160ms ease;
 }
 
-.opening-card p {
-  flex: 1;
-  margin: 0;
-  color: var(--pm-ink-soft);
-  font-size: 13px;
-  line-height: 1.6;
+.confirm-button::after {
+  content: '';
+  position: absolute;
+  inset: 10px 15px;
+  border: 1px solid transparent;
+  pointer-events: none;
 }
 
-.detail-row span {
-  padding: 3px 7px;
-  border-radius: 999px;
-  background: rgba(42, 28, 15, 0.08);
-  color: var(--pm-ink-fade);
-  font-size: 11px;
+.confirm-button:hover:not(:disabled) {
+  filter: brightness(1.18);
+  transform: translateY(-2px);
 }
 
-.opening-card .pm-btn {
-  height: 34px;
-  padding: 0 12px;
+.confirm-button:hover:not(:disabled)::after {
+  border-color: rgba(255, 224, 143, 0.45);
+  box-shadow: inset 0 0 18px rgba(246, 203, 102, 0.12);
+}
+
+.confirm-button:active:not(:disabled) {
+  transform: translateY(2px);
+}
+
+.confirm-button:disabled,
+.worldbook-control button:disabled,
+.worldbook-control select:disabled {
+  cursor: not-allowed;
+  filter: grayscale(0.8) brightness(0.76);
+}
+
+.mobile-button-skin {
+  display: none;
 }
 
 @media (max-width: 760px) {
-  .opening-shell {
-    grid-template-columns: 324px;
-    width: 356px;
-    height: 680px;
-    padding: 12px;
-    overflow: auto;
+  .opening-stage {
+    width: 390px;
+    height: 760px;
+    border-radius: 0;
+    background-position: 31% center;
+    background-size: 1140px 760px;
   }
 
-  .opening-ledger {
-    height: 360px;
-    padding: 20px 18px;
+  .opening-title {
+    left: 93px;
+    top: 78px;
   }
 
-  .opening-main {
-    height: 600px;
-    padding: 18px;
+  .opening-browser {
+    left: 35px;
+    top: 136px;
+    width: 320px;
   }
 
-  .worldbook-picker select {
-    width: 270px;
+  .opening-intro h2 {
+    font-size: 15px;
   }
 
-  .opening-grid {
-    grid-template-columns: 272px;
-    height: 446px;
+  .opening-choice-grid {
+    display: flex;
+    gap: 10px;
+    width: 320px;
+    padding: 3px 3px 8px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: thin;
   }
 
-  .opening-card {
-    height: 236px;
+  .opening-choice {
+    grid-template-rows: 238px 74px;
+    width: 218px;
+    height: 312px;
+    flex: 0 0 218px;
+    scroll-snap-align: center;
+  }
+
+  .portrait-slot img {
+    width: 206px;
+    height: 232px;
+  }
+
+  .portrait-placeholder {
+    background-size: 683px 455px;
+  }
+
+  .choice-copy strong {
+    font-size: 15px;
+  }
+
+  .opening-detail {
+    display: none;
+  }
+
+  .worldbook-control {
+    left: 35px;
+    top: 512px;
+    grid-template-columns: 70px 207px 32px;
+    gap: 5px;
+    width: 320px;
+  }
+
+  .worldbook-control select {
+    width: 207px;
+  }
+
+  .worldbook-control label {
+    color: #f1d89f;
+    text-shadow: 0 2px 3px #351909;
+  }
+
+  .opening-status {
+    left: 42px;
+    top: 554px;
+    width: 306px;
+    height: 29px;
+    overflow: hidden;
+    color: #f0d9a3;
+    line-height: 1.55;
+    text-align: center;
+    text-shadow: 0 2px 3px #351909;
+  }
+
+  .opening-steps {
+    left: 34px;
+    top: 594px;
+    grid-template-columns: repeat(3, 107px);
+    height: 54px;
+  }
+
+  .opening-steps span {
+    font-size: 9px;
+  }
+
+  .confirm-button {
+    left: 46px;
+    top: 658px;
+    width: 298px;
+    height: 66px;
+    font-size: 15px;
+  }
+
+  .mobile-button-skin {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    display: block;
+    background-position: -192px -297px;
+    background-repeat: no-repeat;
+    background-size: 683px 455px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .opening-choice,
+  .confirm-button,
+  .worldbook-control button {
+    transition: none;
   }
 }
 </style>
