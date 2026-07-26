@@ -2055,7 +2055,7 @@ export function buildDeerOpeningPreset(worldbookName = ''): {
 
   const initvar = bundle.story.initvar as Record<string, any>;
   initvar.世界.当前历法.天气 = '傍晚暖黄斜光，融雪放缓，屋檐滴水变慢';
-  initvar.世界.当前历法.时间 = '17:50';
+  initvar.世界.当前历法.时间 = '17:30';
   initvar.酒馆.资金 = {
     随身钱袋: openingMoneyBucket(6000),
     钱匣: openingMoneyBucket(0),

@@ -3035,8 +3035,9 @@ export const useGameStore = defineStore('primordia', () => {
         : await ensureWeatherWorldbook(targetWorldbook);
     }
 
+    if (npcActivityWorldbookBindings.value.length > 0) {
     try {
-      const binding = await ensureNpcActivityWorldbookBinding(targetWorldbook);
+      const binding = npcActivityWorldbookBindings.value[0];
       npcActivityWorldbookBindings.value = [{
         worldbookName: binding.worldbookName,
         uid: binding.uid,
@@ -3058,8 +3059,9 @@ export const useGameStore = defineStore('primordia', () => {
           markLocalStateDirty();
         }
       } else {
-        npcActivityOk = await ensureNpcActivityWorldbook(targetWorldbook);
+        npcActivityOk = false;
       }
+    }
     }
 
     if (weatherOk || npcActivityOk) await writeChatSave();
@@ -9447,6 +9449,21 @@ export const useGameStore = defineStore('primordia', () => {
     return output;
   }
 
+  function mergeOpeningStatData<T extends Record<string, any>>(base: T, patch: Record<string, any>): T {
+    const output = mergePlainData(base, patch);
+
+    // Opening variants own the complete relationship roster; retaining floor-0 entries
+    // here would mix characters from a different opening into the selected scenario.
+    const replaceWholeKeys = ['\u4eba\u7269\u7f81\u7eca'];
+    replaceWholeKeys.forEach(key => {
+      if (Object.prototype.hasOwnProperty.call(patch, key)) {
+        output[key] = clonePlainData(patch[key]);
+      }
+    });
+
+    return output;
+  }
+
   function readInitStatData() {
     try {
       if (typeof Mvu !== 'undefined' && typeof Mvu.getMvuData === 'function') {
@@ -9618,7 +9635,7 @@ export const useGameStore = defineStore('primordia', () => {
     if (!bundle.story.initvar || typeof bundle.story.initvar !== 'object') {
       throw new Error('开局 AI 没有生成有效 initvar，不能创建第 1 层。');
     }
-    const statData = normalizeOpeningStatDataShape(mergePlainData(readInitStatData(), bundle.story.initvar));
+    const statData = normalizeOpeningStatDataShape(mergeOpeningStatData(readInitStatData(), bundle.story.initvar));
     const tavernTerritory = draft.tavern.territory.trim() || draft.region.trim() || '韦斯托利亚';
     const tavernCity = draft.tavern.city.trim() || '布拉姆维克';
     const tavernPlace = draft.tavern.place.trim() || '主厅接待区';
@@ -9816,6 +9833,24 @@ export const useGameStore = defineStore('primordia', () => {
       const detail = describeHostError(error, '楼层接口没有返回具体错误。');
       throw new Error(`创建第 1 层开局消息失败：${detail}`);
     }
+
+    if (typeof messageId === 'number' && typeof Mvu !== 'undefined' && typeof Mvu.replaceMvuData === 'function') {
+      try {
+        const currentMvuData =
+          typeof Mvu.getMvuData === 'function'
+            ? clonePlainData(Mvu.getMvuData({ type: 'message', message_id: messageId }) ?? {})
+            : {};
+        currentMvuData.stat_data = clonePlainData(openingStatData);
+        await Mvu.replaceMvuData(currentMvuData, { type: 'message', message_id: messageId });
+      } catch (error) {
+        console.warn('[primordia] 开局楼层已创建，但自动刷新 MVU 数据失败:', error);
+      }
+    }
+
+    applyMvuStatData(clonePlainData(openingStatData), { restoreInventory: true });
+    syncGeneratedShopWithLocation(messageId);
+    logMvuSyncMismatches(openingStatData);
+    setVisibleStoryMessageId(messageId);
 
     openingSave.value = {
       completed: true,
@@ -11527,9 +11562,29 @@ export const useGameStore = defineStore('primordia', () => {
     });
   }
 
-  async function ensureCharacterBehaviorLibraryBinding(heroine: Heroine) {
+  async function loadCharacterBehaviorLibraryForHeroine(heroineId: string) {
+    const heroine = heroines.value.find(item => item.id === heroineId);
+    if (!heroine) return null;
+    const binding = findCharacterBehaviorBinding(heroine);
+    if (!binding) {
+      const library = createEmptyCharacterBehaviorLibrary(heroine.id, heroine.name);
+      characterBehaviorLibraries.value = { ...characterBehaviorLibraries.value, [heroine.id]: clonePlain(library) };
+      return library;
+    }
+    const library = await loadCharacterBehaviorLibraryFromEntry(binding, heroine.id, heroine.name);
+    characterBehaviorLibraries.value = { ...characterBehaviorLibraries.value, [heroine.id]: clonePlain(library) };
+    await touchCharacterWorldbookBinding(heroine.id, binding.worldbookName, Number(binding.uid), binding.label);
+    return library;
+  }
+
+  async function ensureCharacterBehaviorLibraryForHeroine(heroineId: string) {
+    const heroine = heroines.value.find(item => item.id === heroineId);
+    if (!heroine) return null;
     const existing = findCharacterBehaviorBinding(heroine);
-    if (existing) return existing;
+    if (existing) {
+      await loadCharacterBehaviorLibraryForHeroine(heroine.id);
+      return existing;
+    }
     const ensured = await ensureCharacterBehaviorWorldbookEntry(heroine.id, heroine.name);
     const binding: CharacterWorldbookBinding = {
       id: `character-behavior:${ensured.worldbookName}:${ensured.uid}`,
@@ -11540,23 +11595,15 @@ export const useGameStore = defineStore('primordia', () => {
       updatedAt: Date.now(),
     };
     await bindCharacterWorldbookEntry(heroine.id, binding);
+    await loadCharacterBehaviorLibraryForHeroine(heroine.id);
     return binding;
-  }
-
-  async function loadCharacterBehaviorLibraryForHeroine(heroineId: string) {
-    const heroine = heroines.value.find(item => item.id === heroineId);
-    if (!heroine) return null;
-    const binding = await ensureCharacterBehaviorLibraryBinding(heroine);
-    const library = await loadCharacterBehaviorLibraryFromEntry(binding, heroine.id, heroine.name);
-    characterBehaviorLibraries.value = { ...characterBehaviorLibraries.value, [heroine.id]: clonePlain(library) };
-    await touchCharacterWorldbookBinding(heroine.id, binding.worldbookName, Number(binding.uid), binding.label);
-    return library;
   }
 
   async function saveCharacterBehaviorLibraryForHeroine(heroineId: string, library: CharacterBehaviorLibrary) {
     const heroine = heroines.value.find(item => item.id === heroineId);
     if (!heroine) return false;
-    const binding = await ensureCharacterBehaviorLibraryBinding(heroine);
+    const binding = findCharacterBehaviorBinding(heroine);
+    if (!binding) return false;
     await saveCharacterBehaviorLibraryToEntry(binding, library);
     characterBehaviorLibraries.value = { ...characterBehaviorLibraries.value, [heroine.id]: clonePlain(library) };
     await touchCharacterWorldbookBinding(heroine.id, binding.worldbookName, Number(binding.uid), binding.label);
@@ -11584,7 +11631,8 @@ export const useGameStore = defineStore('primordia', () => {
     let unlocated = 0;
     for (const { heroine, updates: heroineUpdates } of grouped.values()) {
       try {
-        const binding = await ensureCharacterBehaviorLibraryBinding(heroine);
+        const binding = findCharacterBehaviorBinding(heroine);
+        if (!binding) continue;
         const existing = characterBehaviorLibraries.value[heroine.id]
           ? clonePlain(characterBehaviorLibraries.value[heroine.id])
           : await loadCharacterBehaviorLibraryFromEntry(binding, heroine.id, heroine.name);
@@ -12472,6 +12520,7 @@ export const useGameStore = defineStore('primordia', () => {
     ensureTurnContextWorldbook,
     refreshTurnContextWorldbookBinding,
     loadCharacterBehaviorLibraryForHeroine,
+    ensureCharacterBehaviorLibraryForHeroine,
     addCharacterBehavior,
     updateCharacterBehavior,
     deleteCharacterBehavior,

@@ -32,17 +32,22 @@ function parseFixedOpeningSections() {
 
 const FIXED_OPENING_INITVARS = (() => {
   const [fox, sheepPatch, deerPatch, twinsPatch] = parseFixedOpeningSections();
-  const withCharacterPatch = (patch: Record<string, any>) => {
+  const relationshipKey = '\u4eba\u7269\u7f81\u7eca';
+  const withCharacterPatch = (patch: Record<string, any>, time: string) => {
     const next = clonePlainData(fox);
-    const relationshipKey = '\u4eba\u7269\u7f81\u7eca';
     next[relationshipKey] = clonePlainData(patch[relationshipKey] ?? {});
+    next['世界']['当前历法']['时间'] = time;
     return next;
   };
+  const foxOpening = clonePlainData(fox);
+  foxOpening['世界']['当前历法']['时间'] = '06:30';
+  foxOpening[relationshipKey]['橘柒']['收入']['备注'] = '身无分文的狐族少女';
+
   return {
-    fox: clonePlainData(fox),
-    sheep: withCharacterPatch(sheepPatch),
-    deer: withCharacterPatch(deerPatch),
-    twins: withCharacterPatch(twinsPatch),
+    fox: foxOpening,
+    sheep: withCharacterPatch(sheepPatch, '11:30'),
+    deer: withCharacterPatch(deerPatch, '17:30'),
+    twins: withCharacterPatch(twinsPatch, '14:30'),
   } satisfies Record<FixedOpeningInitvarKind, Record<string, any>>;
 })();
 

@@ -33,6 +33,8 @@ const settingSections = [
   { id: 'save', label: '存档账本', desc: '自查 · 导入导出' },
   { id: 'debug', label: '调试后台', desc: '提示词 · 引擎' },
 ] as const;
+const showSaveSettings = false;
+const visibleSettingSections = computed(() => settingSections.filter(section => showSaveSettings || section.id !== 'save'));
 const activeSettingsSection = ref<(typeof settingSections)[number]['id']>('play');
 const promptDebugSnapshots = ref<PromptDebugSnapshot[]>(getPromptDebugSnapshots());
 const selectedPromptDebugId = ref(promptDebugSnapshots.value[0]?.id ?? '');
@@ -55,6 +57,7 @@ const weatherBindingWorldbook = ref(game.weatherWorldbookBindings[0]?.worldbookN
 const weatherBindingUid = ref(String(game.weatherWorldbookBindings[0]?.uid ?? ''));
 const knownWorldbookNames = ref<string[]>([]);
 const showNpcActivityTemplate = ref(false);
+const showDefaultNpcActivityControls = false;
 const defaultNpcActivityEntries = Object.entries(tavernNpcActivityPools);
 
 function hasNpcActivityTag(content: unknown) {
@@ -497,7 +500,7 @@ async function importSaveFile(event: Event) {
 
     <nav class="settings-tabs" aria-label="设置分组">
       <button
-        v-for="section in settingSections"
+        v-for="section in visibleSettingSections"
         :key="section.id"
         class="settings-tab"
         :class="{ active: activeSettingsSection === section.id }"
@@ -868,7 +871,7 @@ async function importSaveFile(event: Event) {
           />
           <small>新生成的配角动向会保持这么多个成功叙事回合；默认 3，不设上限。</small>
         </label>
-        <div class="default-activity-box">
+        <div v-if="showDefaultNpcActivityControls" class="default-activity-box">
           <button class="pm-btn sm ghost" @click="showNpcActivityTemplate = !showNpcActivityTemplate">
             <PmIcon name="scroll" :size="12" /> {{ showNpcActivityTemplate ? '收起完整模板内容' : '查看完整模板内容' }}
           </button>
@@ -904,7 +907,7 @@ async function importSaveFile(event: Event) {
             <button class="pm-btn sm" @click="openNpcActivityBindWorldbook">
               <PmIcon name="scroll" :size="12" /> 选择行为库条目
             </button>
-            <button class="pm-btn sm" @click="ensureNpcActivityWorldbook">
+            <button v-if="showDefaultNpcActivityControls" class="pm-btn sm" @click="ensureNpcActivityWorldbook">
               <PmIcon name="check" :size="12" /> 自动创建/绑定行为库
             </button>
             <button class="pm-btn sm ghost" @click="refreshBoundNpcActivityWorldbook">
@@ -943,7 +946,7 @@ async function importSaveFile(event: Event) {
           <button class="pm-btn sm" @click="refreshNpcActivityWorldbook">
             <PmIcon name="check" :size="12" /> 读取当前世界书
           </button>
-          <button class="pm-btn sm ghost" @click="copyNpcActivityTemplate">
+          <button v-if="showDefaultNpcActivityControls" class="pm-btn sm ghost" @click="copyNpcActivityTemplate">
             <PmIcon name="scroll" :size="12" /> 复制格式模板
           </button>
         </div>
@@ -981,7 +984,7 @@ async function importSaveFile(event: Event) {
         </div>
       </section>
 
-      <section v-show="activeSettingsSection === 'save'" class="settings-card pm-card self-check-card">
+      <section v-if="showSaveSettings" v-show="activeSettingsSection === 'save'" class="settings-card pm-card self-check-card">
         <h3>账本自查 · 只读</h3>
         <p class="pm-dim">
           这里检查前端主存档本身，不会修改钱袋、库存、地点或楼层。红色代表会破坏连续性，黄色代表需要留意。
@@ -1014,7 +1017,7 @@ async function importSaveFile(event: Event) {
         <pre v-if="showPromptPreview" class="json-preview debug-json">{{ promptPreview }}</pre>
       </section>
 
-      <section v-show="activeSettingsSection === 'save'" class="settings-card pm-card">
+      <section v-if="showSaveSettings" v-show="activeSettingsSection === 'save'" class="settings-card pm-card">
         <h3>存档读写 · JSON</h3>
         <p class="pm-dim">
           支持完整结构的导入导出, 便于离线回看与跨设备同步; 实际接入 MVU 后, 读档将自动应用到 stat_data。

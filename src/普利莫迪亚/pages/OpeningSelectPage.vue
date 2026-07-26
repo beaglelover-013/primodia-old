@@ -17,7 +17,6 @@ const emit = defineEmits<{
 }>();
 
 const game = useGameStore();
-const worldbooks = ref<string[]>([]);
 const worldbookName = ref('');
 const selectedOpeningId = ref('fox-applicant');
 const loading = ref('');
@@ -79,8 +78,9 @@ const selectedOpening = computed(
 );
 
 function refreshWorldbooks() {
-  worldbooks.value = game.availableOpeningWorldbooks();
-  worldbookName.value = worldbookName.value || game.defaultOpeningWorldbookName() || worldbooks.value[0] || '';
+  const availableWorldbooks = game.availableOpeningWorldbooks();
+  worldbookName.value =
+    worldbookName.value || game.defaultOpeningWorldbookName() || availableWorldbooks[0] || '';
 }
 
 async function chooseOpening(id: string) {
@@ -227,24 +227,7 @@ onMounted(refreshWorldbooks);
       <span class="selection-state"><i></i> 已选中</span>
     </aside>
 
-    <div class="worldbook-control">
-      <label for="opening-worldbook">写入世界书</label>
-      <select id="opening-worldbook" v-model="worldbookName" :disabled="!!loading">
-        <option value="">请选择世界书</option>
-        <option v-for="name in worldbooks" :key="name" :value="name">{{ name }}</option>
-      </select>
-      <button
-        type="button"
-        :disabled="!!loading"
-        aria-label="刷新世界书列表"
-        title="刷新世界书列表"
-        @click="refreshWorldbooks"
-      >
-        <PmIcon name="gear" :size="16" />
-      </button>
-    </div>
-
-    <p class="opening-status" :class="{ bad: error, good: notice }" aria-live="polite">
+    <p v-if="error || notice || loading" class="opening-status" :class="{ bad: error, good: notice }" aria-live="polite">
       {{ error || notice || loading || '选择后将创建第 1 层正文，并写入对应的初始化变量。' }}
     </p>
 
@@ -298,13 +281,11 @@ onMounted(refreshWorldbooks);
   box-sizing: border-box;
 }
 
-button,
-select {
+button {
   font: inherit;
 }
 
-button:focus-visible,
-select:focus-visible {
+button:focus-visible {
   outline: 3px solid #fff0b1;
   outline-offset: 3px;
 }
@@ -608,59 +589,10 @@ select:focus-visible {
   box-shadow: 0 0 5px rgba(61, 121, 76, 0.55);
 }
 
-.worldbook-control {
-  position: absolute;
-  left: 153px;
-  top: 446px;
-  display: grid;
-  grid-template-columns: 78px 330px 32px;
-  align-items: center;
-  gap: 8px;
-  width: 472px;
-  height: 42px;
-  color: #6f4a28;
-  font-size: 10px;
-}
-
-.worldbook-control label {
-  font-weight: 700;
-}
-
-.worldbook-control select {
-  width: 330px;
-  height: 32px;
-  padding: 0 30px 0 10px;
-  color: #57361e;
-  border: 1px solid #9d6b32;
-  border-radius: 3px;
-  background: rgba(248, 226, 180, 0.92);
-  box-shadow:
-    inset 0 0 0 2px rgba(255, 244, 210, 0.55),
-    0 2px 3px rgba(76, 40, 13, 0.18);
-}
-
-.worldbook-control button {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  color: #f0d89c;
-  border: 1px solid #ad7731;
-  border-radius: 50%;
-  background: #294b36;
-  cursor: pointer;
-}
-
-.worldbook-control button:hover:not(:disabled) {
-  color: #fff0b2;
-  transform: rotate(18deg);
-}
-
 .opening-status {
   position: absolute;
   left: 153px;
-  top: 494px;
+  top: 462px;
   width: 500px;
   margin: 0;
   color: #80603c;
@@ -676,6 +608,7 @@ select:focus-visible {
 }
 
 .opening-steps {
+  display: none;
   position: absolute;
   left: 132px;
   top: 557px;
@@ -748,9 +681,7 @@ select:focus-visible {
   transform: translateY(2px);
 }
 
-.confirm-button:disabled,
-.worldbook-control button:disabled,
-.worldbook-control select:disabled {
+.confirm-button:disabled {
   cursor: not-allowed;
   filter: grayscale(0.8) brightness(0.76);
 }
@@ -960,26 +891,9 @@ select:focus-visible {
     display: none;
   }
 
-  .worldbook-control {
-    left: 35px;
-    top: 520px;
-    grid-template-columns: 70px 207px 32px;
-    gap: 5px;
-    width: 320px;
-  }
-
-  .worldbook-control select {
-    width: 207px;
-  }
-
-  .worldbook-control label {
-    color: #f1d89f;
-    text-shadow: 0 2px 3px #351909;
-  }
-
   .opening-status {
     left: 42px;
-    top: 563px;
+    top: 535px;
     width: 306px;
     height: 24px;
     overflow: hidden;
@@ -1014,8 +928,7 @@ select:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   .opening-choice,
-  .confirm-button,
-  .worldbook-control button {
+  .confirm-button {
     transition: none;
   }
 }

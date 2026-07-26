@@ -41,6 +41,7 @@ const selectedId = computed({
 const selected = computed(() => visibleHeroines.value.find(h => h.id === selectedId.value) ?? visibleHeroines.value[0] ?? null);
 const selectedWorldbookBindings = computed(() => (selected.value ? (game.characterWorldbookBindings[selected.value.id] ?? []) : []));
 const selectedBehaviorLibrary = computed(() => (selected.value ? game.characterBehaviorLibraries[selected.value.id] ?? null : null));
+const showBehaviorLibraryPanel = true;
 const selectedBehaviorBinding = computed(() =>
   selectedWorldbookBindings.value.find(binding => {
     const id = String(binding.id ?? '');
@@ -58,32 +59,104 @@ interface PresetCgSlot {
   note?: string;
   unlocked?: boolean;
 }
+
+function presetCg(urls: string[], note: string): PresetCgSlot[] {
+  return urls.map((url, index) => ({
+    title: `CG ${index + 1}`,
+    url,
+    unlocked: true,
+    note,
+  }));
+}
+
+const TWIN_OPENING_CG = 'https://i.postimg.cc/mZ1YBg4j/lian-jia-shuang-zi.png';
 const PRESET_CHARACTER_CG: Record<string, Partial<Record<'sfw' | 'nsfw', PresetCgSlot[]>>> = {
   橘柒: {
-    sfw: [
-      {
-        title: 'CG 1',
-        url: 'https://files.catbox.moe/0ld4p2.png',
-        unlocked: true,
-        note: '固定开场立绘。',
-      },
-      {
-        title: 'CG 2',
-        url: 'https://files.catbox.moe/21zsbn.png',
-        unlocked: true,
-        note: '橘柒预设 CG。',
-      },
-    ],
+    sfw: presetCg(
+      [
+        'https://files.catbox.moe/0ld4p2.png',
+        'https://files.catbox.moe/21zsbn.png',
+        'https://files.catbox.moe/ckq34r.png',
+        'https://i.postimg.cc/90PYdcck/Comfy-UI-00153.png',
+        'https://i.postimg.cc/x8G3v997/Comfy-UI-00252.png',
+        'https://i.postimg.cc/Hn09wTpm/Comfy-UI-00254.png',
+        'https://i.postimg.cc/598gdS80/Comfy-UI-00359.png',
+      ],
+      '橘柒预设 CG。',
+    ),
+    nsfw: presetCg(
+      [
+        'https://files.catbox.moe/3gz9ht.png',
+        'https://i.postimg.cc/9FMhN0qs/ju-qins02.png',
+        'https://i.postimg.cc/Kvz2sjMF/ju-qins03.png',
+        'https://i.postimg.cc/Qxt3nCTX/ju-qins04.png',
+        'https://i.postimg.cc/9f3HMBNR/ju-qins05.png',
+        'https://i.postimg.cc/hv81LKKZ/Comfy-UI-00121.png',
+        'https://i.postimg.cc/Hn09wTTR/Comfy-UI-00194.png',
+      ],
+      '橘柒 NSFW CG。',
+    ),
   },
   绵暖: {
-    sfw: [
-      {
-        title: 'CG 1',
-        url: 'https://files.catbox.moe/j42erz.png',
-        unlocked: true,
-        note: '固定开场立绘。',
-      },
-    ],
+    sfw: presetCg(
+      [
+        'https://files.catbox.moe/j42erz.png',
+        'https://files.catbox.moe/re3z5a.png',
+        'https://i.postimg.cc/PxTGb5jR/mian-nuann03.png',
+        'https://i.postimg.cc/DZnVQwhK/mian-nuann04.png',
+      ],
+      '绵暖预设 CG。',
+    ),
+    nsfw: presetCg(['https://i.postimg.cc/Z5QpyWrd/Comfy-UI-00839.png'], '绵暖 NSFW CG。'),
+  },
+  翠萱: {
+    sfw: presetCg(['https://files.catbox.moe/t2r08i.png'], '翠萱预设 CG。'),
+  },
+  莲洵: {
+    sfw: presetCg(
+      [
+        TWIN_OPENING_CG,
+        'https://i.postimg.cc/9XShKVtF/Comfy-UI-01186.png',
+        'https://i.postimg.cc/NGVcSY7Q/Comfy-UI-01188.png',
+        'https://i.postimg.cc/tJ1HJmyZ/Comfy-UI-01192.png',
+        'https://i.postimg.cc/m2HsGq8p/Comfy-UI-01193.png',
+        'https://i.postimg.cc/cLGN1mzJ/Comfy-UI-01194.png',
+        'https://i.postimg.cc/cJsywJZj/Comfy-UI-01196.png',
+      ],
+      '莲洵预设 CG。',
+    ),
+    nsfw: presetCg(
+      ['https://files.catbox.moe/4gt866.png', 'https://files.catbox.moe/pl47i5.png'],
+      '莲洵 NSFW CG。',
+    ),
+  },
+  莲沁: {
+    sfw: presetCg(
+      [
+        TWIN_OPENING_CG,
+        'https://i.postimg.cc/j2GY7QdF/Comfy-UI-01173.png',
+        'https://i.postimg.cc/rpQ6JLwM/Comfy-UI-01198.png',
+        'https://i.postimg.cc/XJzTRc5D/Comfy-UI-01201.png',
+        'https://i.postimg.cc/fk41LzBB/Comfy-UI-01202.png',
+      ],
+      '莲沁预设 CG。',
+    ),
+    nsfw: presetCg(
+      ['https://files.catbox.moe/fpgmct.png', 'https://files.catbox.moe/i3yrtb.png'],
+      '莲沁 NSFW CG。',
+    ),
+  },
+  阿黛拉: {
+    sfw: presetCg(
+      [
+        'https://i.postimg.cc/pLmnxP33/Comfy-UI-00886.png',
+        'https://i.postimg.cc/pLmnxP3w/Comfy-UI-00890.png',
+        'https://i.postimg.cc/CxRfYw9W/Comfy-UI-00895.png',
+        'https://i.postimg.cc/138NPyLx/Comfy-UI-00896.png',
+        'https://i.postimg.cc/L8JZRmr4/Comfy-UI-00899.png',
+      ],
+      '阿黛拉预设 CG。',
+    ),
   },
 };
 const cgPreview = ref<{ title: string; url: string; note?: string } | null>(null);
@@ -108,29 +181,32 @@ const selectedBehaviorItem = computed(() => {
 });
 const selectedCgSlots = computed(() => {
   if (!selected.value) return [];
-  const baseSlots = selected.value.cgSlots?.length
-    ? selected.value.cgSlots
-    : Array.from({ length: 6 }, (_, idx) => ({
-        id: `${selected.value?.id}-cg-${idx + 1}`,
-        title: `CG ${idx + 1}`,
-        unlocked: idx === 0,
+  const presetBook = PRESET_CHARACTER_CG[selected.value.name] ?? {};
+  const presetSlots = (['sfw', 'nsfw'] as const).flatMap(rating =>
+    (presetBook[rating] ?? []).map((slot, index) => ({
+      id: `${selected.value?.id}-preset-${rating}-${index + 1}`,
+      title: slot.title?.trim() || `CG ${index + 1}`,
+      url: slot.url.trim(),
+      unlocked: slot.unlocked ?? true,
+      rating,
+      note: slot.note?.trim(),
+    })),
+  );
+  const storedSlots = selected.value.cgSlots ?? [];
+  const merged = [...presetSlots, ...storedSlots].filter((slot, index, slots) => {
+    if (!slot.url) return true;
+    return slots.findIndex(other => other.url === slot.url) === index;
+  });
+  const slots = merged.length
+    ? merged
+    : Array.from({ length: 6 }, (_, index) => ({
+        id: `${selected.value?.id}-cg-${index + 1}`,
+        title: `CG ${index + 1}`,
+        unlocked: index === 0,
         rating: 'sfw' as const,
         note: '之后把图床链接填到角色数据的 url 字段。',
       }));
-  const presetBook = PRESET_CHARACTER_CG[selected.value.name] ?? {};
-  return baseSlots.map((slot, index) => {
-    const rating = (slot.rating ?? 'sfw') as 'sfw' | 'nsfw';
-    const preset = presetBook[rating]?.[index];
-    return {
-      ...slot,
-      rating,
-      title: preset?.title?.trim() || slot.title,
-      url: preset?.url?.trim() || slot.url,
-      unlocked: preset?.unlocked ?? slot.unlocked,
-      note: preset?.note?.trim() || slot.note,
-      slotIndex: index,
-    };
-  });
+  return slots.map((slot, slotIndex) => ({ ...slot, slotIndex }));
 });
 const visibleCgSlots = computed(() => selectedCgSlots.value.filter(item => (item.rating ?? 'sfw') === cgRatingTab.value));
 const selectedCgCounts = computed(() => ({
@@ -341,7 +417,6 @@ watch(
     wardrobeLibrary.value = {};
     wardrobeLibraryEntryLabel.value = '尚未读取';
     wardrobeVisibleEntryLabel.value = '尚未读取';
-    if (!game.characterBehaviorLibraries[heroineId]) void game.loadCharacterBehaviorLibraryForHeroine(heroineId);
   },
   { immediate: true },
 );
@@ -357,6 +432,12 @@ watch(
 async function refreshBehaviorLibrary() {
   if (!selected.value) return;
   await game.loadCharacterBehaviorLibraryForHeroine(selected.value.id);
+  await refreshBoundWorldbookEntries();
+}
+
+async function ensureBehaviorLibrary() {
+  if (!selected.value) return;
+  await game.ensureCharacterBehaviorLibraryForHeroine(selected.value.id);
   await refreshBoundWorldbookEntries();
 }
 
@@ -807,7 +888,7 @@ async function createWorldbookEntryForSelected() {
           <div v-else class="pm-empty">点击左侧卡片选择一位角色, 查看专属阶段图谱。</div>
         </div>
 
-        <div class="side-card pm-card behavior-card">
+        <div v-if="showBehaviorLibraryPanel" class="side-card pm-card behavior-card">
           <h3>角色行为库 · {{ selected?.name ?? '未选择' }}</h3>
           <template v-if="selected">
             <p class="pm-dim">
@@ -823,6 +904,9 @@ async function createWorldbookEntryForSelected() {
               </span>
             </div>
             <div class="card-actions behavior-actions">
+              <button class="pm-btn sm" :disabled="!!selectedBehaviorBinding" @click="ensureBehaviorLibrary">
+                <PmIcon name="plus" :size="12" /> 创建/绑定个人行为库
+              </button>
               <button class="pm-btn sm ghost" @click="refreshBehaviorLibrary">
                 <PmIcon name="check" :size="12" /> 重新读取
               </button>
@@ -870,7 +954,7 @@ async function createWorldbookEntryForSelected() {
               <input v-model="behaviorRegion" class="pm-input" placeholder="区域，例如：主厅接待区" />
               <textarea v-model="behaviorText" class="pm-textarea compact" placeholder="行为，例如：会主动擦桌子并整理歪掉的椅子。"></textarea>
               <input v-model="behaviorFeel" class="pm-input" placeholder="主角感受，可选" />
-              <button class="pm-btn sm" :disabled="!behaviorText.trim()" @click="addBehaviorLibraryItem">
+              <button class="pm-btn sm" :disabled="!selectedBehaviorBinding || !behaviorText.trim()" @click="addBehaviorLibraryItem">
                 <PmIcon name="plus" :size="12" /> 添加行为
               </button>
             </div>
