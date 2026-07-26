@@ -14,6 +14,7 @@ const drag = reactive({ active: false, moved: false, lastX: 0, lastY: 0 });
 const selectedId = ref(game.currentMapId);
 const mapLayer = ref<'roads' | 'trade' | 'water'>('roads');
 const mobileMapOpen = ref(false);
+const previewImageOpen = ref(false);
 const current = computed(() => game.mapNodes.find(n => n.id === game.currentMapId));
 const selected = computed(() => game.mapNodes.find(n => n.id === selectedId.value) ?? current.value);
 watch(
@@ -105,6 +106,13 @@ const layerHint = computed(() => {
 const selectedTrafficRoutes = computed(() => {
   if (!selected.value) return [];
   return mapTrafficRoutes.filter(route => route.nodes.includes(selected.value!.name));
+});
+const locationPreviewImages: Record<string, string> = {
+  绿谷: 'https://files.catbox.moe/uaj8bb.png',
+};
+const selectedPreviewImage = computed(() => (selected.value ? locationPreviewImages[selected.value.name] : ''));
+watch(selectedPreviewImage, image => {
+  if (!image) previewImageOpen.value = false;
 });
 
 function nodeColor(type: MapNode['type']) {
@@ -631,6 +639,10 @@ function onNodeClick(event: MouseEvent, n: MapNode) {
         <div class="side-card pm-card">
           <h3>城市预览</h3>
           <div v-if="selected">
+            <figure v-if="selectedPreviewImage" class="location-preview" role="button" tabindex="0" @click="previewImageOpen = true" @keydown.enter.prevent="previewImageOpen = true">
+              <img :src="selectedPreviewImage" :alt="`${selected.name}预览`" loading="lazy" />
+              <figcaption>点击放大</figcaption>
+            </figure>
             <div class="loc-h">
               <span class="loc-name">{{ selected.name }}</span>
               <span class="pm-tag" :style="{ background: nodeColor(selected.type), color: '#2a1c11' }">{{ selected.type }}</span>
@@ -729,6 +741,15 @@ function onNodeClick(event: MouseEvent, n: MapNode) {
         </div>
       </aside>
     </div>
+    <Teleport to="body">
+      <div v-if="previewImageOpen && selectedPreviewImage && selected" class="location-preview-modal" @click.self="previewImageOpen = false">
+        <figure class="location-preview-zoom">
+          <button class="preview-close" type="button" aria-label="关闭预览" @click="previewImageOpen = false">×</button>
+          <img :src="selectedPreviewImage" :alt="`${selected.name}大图预览`" />
+          <figcaption>{{ selected.name }} · {{ selected.region }}</figcaption>
+        </figure>
+      </div>
+    </Teleport>
   </section>
 </template>
 
@@ -954,6 +975,111 @@ function onNodeClick(event: MouseEvent, n: MapNode) {
   font-size: calc(14px * var(--pm-text-scale));
   letter-spacing: 0.12em;
   color: var(--pm-ink);
+}
+.location-preview {
+  position: relative;
+  overflow: hidden;
+  margin: 0 0 10px;
+  aspect-ratio: 16 / 9;
+  max-height: 230px;
+  border: 1px solid rgba(110, 80, 34, 0.38);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 247, 221, 0.32), rgba(74, 48, 25, 0.18)),
+    rgba(255, 245, 215, 0.46);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 247, 221, 0.28),
+    0 8px 18px rgba(58, 36, 18, 0.14);
+  cursor: zoom-in;
+}
+.location-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 160ms ease, filter 160ms ease;
+}
+.location-preview:hover img {
+  filter: saturate(1.04) contrast(1.03);
+  transform: scale(1.025);
+}
+.location-preview::after {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(255, 246, 219, 0.12), transparent 34%, rgba(50, 31, 16, 0.18)),
+    inset 0 0 0 1px rgba(255, 248, 224, 0.2);
+  content: '';
+}
+.location-preview figcaption {
+  position: absolute;
+  right: 8px;
+  bottom: 7px;
+  z-index: 1;
+  padding: 3px 7px;
+  border: 1px solid rgba(235, 204, 128, 0.5);
+  border-radius: 999px;
+  color: #f5e5b7;
+  background: rgba(34, 22, 13, 0.7);
+  font-size: calc(11px * var(--pm-text-scale));
+  font-weight: 700;
+}
+.location-preview-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(14, 9, 6, 0.78);
+  backdrop-filter: blur(5px);
+}
+.location-preview-zoom {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  width: min(1180px, 94vw);
+  margin: 0;
+  padding: 10px;
+  border: 1px solid rgba(212, 174, 91, 0.72);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(58, 37, 20, 0.94), rgba(24, 15, 10, 0.96)),
+    rgba(28, 18, 12, 0.96);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.48);
+}
+.location-preview-zoom img {
+  display: block;
+  width: 100%;
+  max-height: 82vh;
+  object-fit: contain;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.24);
+}
+.location-preview-zoom figcaption {
+  color: #f0dcaa;
+  font-family: var(--pm-font-display);
+  font-size: calc(14px * var(--pm-text-scale));
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+.preview-close {
+  position: absolute;
+  top: -12px;
+  right: -12px;
+  z-index: 2;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid rgba(212, 174, 91, 0.75);
+  border-radius: 999px;
+  color: #f7e8bd;
+  background: rgba(23, 14, 9, 0.96);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  font-size: 22px;
+  line-height: 1;
 }
 .loc-h {
   display: inline-flex;
