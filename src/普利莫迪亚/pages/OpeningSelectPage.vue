@@ -174,7 +174,38 @@ onMounted(refreshWorldbooks);
         </button>
       </div>
 
-      <p class="mobile-summary">{{ selectedOpening.summary }}</p>
+      <article class="mobile-selected-opening">
+        <div class="mobile-feature-image">
+          <img
+            v-if="selectedOpening.image"
+            :src="selectedOpening.image"
+            :alt="selectedOpening.heroine"
+          />
+          <span
+            v-else
+            class="mobile-solo-image"
+            :style="{ backgroundImage: `url(${titleBoardImage})` }"
+          >
+            <PmIcon name="tavern" :size="32" />
+          </span>
+        </div>
+        <div class="mobile-feature-copy">
+          <small>SELECTED OPENING</small>
+          <h3>{{ selectedOpening.heroine }}</h3>
+          <strong>{{ selectedOpening.title }}</strong>
+          <dl>
+            <div>
+              <dt>种族</dt>
+              <dd>{{ selectedOpening.race }}</dd>
+            </div>
+            <div>
+              <dt>时间</dt>
+              <dd>{{ selectedOpening.time }}</dd>
+            </div>
+          </dl>
+          <p>{{ selectedOpening.summary }}</p>
+        </div>
+      </article>
     </main>
 
     <aside class="opening-detail">
@@ -214,7 +245,7 @@ onMounted(refreshWorldbooks);
     </div>
 
     <p class="opening-status" :class="{ bad: error, good: notice }" aria-live="polite">
-      {{ error || notice || loading || selectedOpening.summary }}
+      {{ error || notice || loading || '选择后将创建第 1 层正文，并写入对应的初始化变量。' }}
     </p>
 
     <nav class="opening-steps" aria-label="当前开局流程">
@@ -493,7 +524,7 @@ select:focus-visible {
   color: #c9b98e;
 }
 
-.mobile-summary {
+.mobile-selected-opening {
   display: none;
 }
 
@@ -748,39 +779,181 @@ select:focus-visible {
     width: 320px;
   }
 
+  .opening-intro {
+    margin-bottom: 9px;
+  }
+
   .opening-intro h2 {
     font-size: 15px;
   }
 
   .opening-choice-grid {
-    display: flex;
-    gap: 10px;
+    display: grid;
+    grid-template-columns: repeat(5, 58px);
+    gap: 7px;
     width: 320px;
-    padding: 3px 3px 8px;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    scrollbar-width: thin;
+    padding: 0;
+    overflow: visible;
   }
 
   .opening-choice {
-    grid-template-rows: 238px 74px;
-    width: 218px;
-    height: 312px;
-    flex: 0 0 218px;
-    scroll-snap-align: center;
+    grid-template-rows: 66px 34px;
+    width: 58px;
+    height: 100px;
+  }
+
+  .portrait-slot {
+    margin: 3px 3px 0;
   }
 
   .portrait-slot img {
-    width: 206px;
-    height: 232px;
+    width: 50px;
+    height: 62px;
   }
 
   .portrait-placeholder {
-    background-size: 683px 455px;
+    gap: 0;
+    background-size: 260px 173px;
+  }
+
+  .portrait-placeholder strong {
+    display: none;
+  }
+
+  .solo-emblem {
+    width: 28px;
+    height: 28px;
+  }
+
+  .solo-emblem :deep(svg) {
+    width: 16px;
+    height: 16px;
+  }
+
+  .choice-gem {
+    right: 5px;
+    top: 5px;
+    width: 7px;
+    height: 7px;
+  }
+
+  .choice-copy {
+    gap: 0;
+    padding: 2px;
+  }
+
+  .choice-copy small,
+  .choice-copy > span {
+    display: none;
   }
 
   .choice-copy strong {
-    font-size: 15px;
+    font-size: 9px;
+    line-height: 1.25;
+  }
+
+  .mobile-selected-opening {
+    display: grid;
+    grid-template-columns: 128px 1fr;
+    gap: 10px;
+    width: 320px;
+    height: 224px;
+    margin-top: 10px;
+    padding: 6px;
+    overflow: hidden;
+    border: 1px solid #9f7039;
+    border-radius: 2px;
+    background: rgba(248, 226, 180, 0.9);
+    box-shadow:
+      inset 0 0 0 2px rgba(255, 244, 211, 0.62),
+      0 4px 8px rgba(74, 37, 12, 0.26);
+  }
+
+  .mobile-feature-image {
+    width: 128px;
+    height: 210px;
+    overflow: hidden;
+    border: 1px solid #a97a40;
+    background: #d8b97c;
+    box-shadow: inset 0 0 0 2px rgba(255, 237, 186, 0.55);
+  }
+
+  .mobile-feature-image img {
+    display: block;
+    width: 126px;
+    height: 208px;
+    object-fit: cover;
+    object-position: center top;
+  }
+
+  .mobile-solo-image {
+    display: grid;
+    place-items: center;
+    width: 126px;
+    height: 208px;
+    color: #f2dba3;
+    background-color: #23412f;
+    background-position: center;
+    background-size: 360px 240px;
+    text-shadow: 0 2px 3px #251207;
+  }
+
+  .mobile-feature-copy {
+    min-width: 0;
+    padding: 6px 5px 4px;
+    color: #5a351d;
+  }
+
+  .mobile-feature-copy > small {
+    color: #987043;
+    font-family: Georgia, serif;
+    font-size: 7px;
+    letter-spacing: 0.12em;
+  }
+
+  .mobile-feature-copy h3 {
+    margin: 6px 0 2px;
+    font-size: 18px;
+    line-height: 1.25;
+  }
+
+  .mobile-feature-copy > strong {
+    color: #8e653d;
+    font-size: 9px;
+  }
+
+  .mobile-feature-copy dl {
+    margin: 10px 0 0;
+    font-size: 8px;
+  }
+
+  .mobile-feature-copy dl div {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(151, 102, 49, 0.22);
+  }
+
+  .mobile-feature-copy dt {
+    color: #9a7047;
+  }
+
+  .mobile-feature-copy dd {
+    margin: 0;
+    font-weight: 700;
+    text-align: right;
+  }
+
+  .mobile-feature-copy p {
+    display: -webkit-box;
+    margin: 9px 0 0;
+    overflow: hidden;
+    color: #76563a;
+    font-size: 8px;
+    line-height: 1.6;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
   }
 
   .opening-detail {
@@ -789,7 +962,7 @@ select:focus-visible {
 
   .worldbook-control {
     left: 35px;
-    top: 512px;
+    top: 520px;
     grid-template-columns: 70px 207px 32px;
     gap: 5px;
     width: 320px;
@@ -806,9 +979,9 @@ select:focus-visible {
 
   .opening-status {
     left: 42px;
-    top: 554px;
+    top: 563px;
     width: 306px;
-    height: 29px;
+    height: 24px;
     overflow: hidden;
     color: #f0d9a3;
     line-height: 1.55;
@@ -817,19 +990,12 @@ select:focus-visible {
   }
 
   .opening-steps {
-    left: 34px;
-    top: 594px;
-    grid-template-columns: repeat(3, 107px);
-    height: 54px;
-  }
-
-  .opening-steps span {
-    font-size: 9px;
+    display: none;
   }
 
   .confirm-button {
     left: 46px;
-    top: 658px;
+    top: 635px;
     width: 298px;
     height: 66px;
     font-size: 15px;
