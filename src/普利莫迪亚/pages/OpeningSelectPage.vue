@@ -2,7 +2,13 @@
 import { computed, onMounted, ref } from 'vue';
 import PmIcon from '../components/PmIcon.vue';
 import { useGameStore } from '../stores/game';
-import { buildFixedOpeningPreset, buildSheepOpeningPreset, buildSoloCookOpeningPreset } from '../services/openingWorkshop';
+import {
+  buildDeerOpeningPreset,
+  buildFixedOpeningPreset,
+  buildSheepOpeningPreset,
+  buildSoloCookOpeningPreset,
+  buildTwinsOpeningPreset,
+} from '../services/openingWorkshop';
 
 const game = useGameStore();
 
@@ -32,6 +38,22 @@ const openings = computed(() => [
     details: [displayedProtagonistName.value, displayedTavernName.value, '绵暖', '酿造师公会'],
   },
   {
+    id: 'deer-traveler',
+    title: '翠萱来投宿',
+    badge: '已完成',
+    enabled: true,
+    summary: `解冻月的傍晚，走了远路的鹿族旅人翠萱背着大帆布背包推开${displayedTavernName.value}的门，询问客房价格。`,
+    details: [displayedProtagonistName.value, displayedTavernName.value, '翠萱', '傍晚投宿'],
+  },
+  {
+    id: 'rabbit-twins',
+    title: '莲家双子上门',
+    badge: '已完成',
+    enabled: true,
+    summary: `一对一模一样的兔族双子推开${displayedTavernName.value}的门：姐姐莲洵趴上柜台连珠炮地问吃住，妹妹莲沁安静地站在半步后。`,
+    details: [displayedProtagonistName.value, displayedTavernName.value, '莲洵', '莲沁'],
+  },
+  {
     id: 'solo-cook',
     title: '单人开局',
     badge: '已完成',
@@ -57,6 +79,8 @@ async function chooseOpening(id: string) {
   const openingLabels: Record<string, string> = {
     'fox-applicant': '橘柒开场',
     'sheep-brewer': '绵暖开场',
+    'deer-traveler': '翠萱开场',
+    'rabbit-twins': '莲家双子开场',
     'solo-cook': '单人开局',
   };
   loading.value = `正在创建${openingLabels[id] ?? '开场'}`;
@@ -64,9 +88,13 @@ async function chooseOpening(id: string) {
     const { draft, bundle } =
       id === 'sheep-brewer'
         ? buildSheepOpeningPreset(worldbookName.value)
-        : id === 'solo-cook'
-          ? buildSoloCookOpeningPreset(worldbookName.value)
-          : buildFixedOpeningPreset(worldbookName.value);
+        : id === 'deer-traveler'
+          ? buildDeerOpeningPreset(worldbookName.value)
+          : id === 'rabbit-twins'
+            ? buildTwinsOpeningPreset(worldbookName.value)
+            : id === 'solo-cook'
+              ? buildSoloCookOpeningPreset(worldbookName.value)
+              : buildFixedOpeningPreset(worldbookName.value);
     await game.confirmOpeningWorkshop(draft, bundle);
     notice.value = `${openingLabels[id] ?? '开场'}已创建，已经进入编年录。`;
   } catch (err) {
@@ -90,7 +118,7 @@ onMounted(refreshWorldbooks);
       <div>
         <p>OPENING</p>
         <h1><PmIcon name="ledger" :size="22" /> 开场选择</h1>
-        <span>先选一个开场进入故事。现在只有橘柒开场可用，另外两个位置先留出来。</span>
+        <span>先选一个开场进入故事。</span>
       </div>
       <label class="worldbook-picker">
         <span>写入世界书</span>

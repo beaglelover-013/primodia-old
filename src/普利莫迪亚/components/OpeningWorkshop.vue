@@ -6,9 +6,11 @@ import { findOpeningTerritory, openingRaceOptions, openingTerritories } from '..
 import {
   OPENING_CHARACTER_TEMPLATE_ENTRY,
   OPENING_TAVERN_TEMPLATE_ENTRY,
+  buildDeerOpeningPreset,
   buildFixedOpeningPreset,
   buildSheepOpeningPreset,
   buildSoloCookOpeningPreset,
+  buildTwinsOpeningPreset,
   type OpeningGeneratedProfile,
   type OpeningModuleChoice,
   type OpeningStoryDraft,
@@ -102,6 +104,20 @@ const fixedOpenings = computed(() => [
     image: 'https://files.catbox.moe/j42erz.png',
     summary: `解冻月正午，酿造师公会学徒绵暖来到${displayedTavernName.value}，刚要自我介绍就被融雪风吹乱了开场。`,
     details: [displayedProtagonistName.value, displayedTavernName.value, '绵暖', '阳光融雪'],
+  },
+  {
+    id: 'deer-traveler',
+    title: '翠萱来投宿',
+    badge: '固定开场',
+    summary: `解冻月的傍晚，走了远路的鹿族旅人翠萱背着大帆布背包推开${displayedTavernName.value}的门，询问客房价格。`,
+    details: [displayedProtagonistName.value, displayedTavernName.value, '翠萱', '傍晚投宿'],
+  },
+  {
+    id: 'rabbit-twins',
+    title: '莲家双子上门',
+    badge: '固定开场',
+    summary: `一对一模一样的兔族双子推开${displayedTavernName.value}的门：姐姐莲洵趴上柜台连珠炮地问吃住，妹妹莲沁安静地站在半步后。`,
+    details: [displayedProtagonistName.value, displayedTavernName.value, '莲洵', '莲沁'],
   },
   {
     id: 'solo-cook',
@@ -565,14 +581,20 @@ async function chooseFixedOpening(id: string) {
   const openingLabels: Record<string, string> = {
     'fox-applicant': '橘柒开场',
     'sheep-brewer': '绵暖开场',
+    'deer-traveler': '翠萱开场',
+    'rabbit-twins': '莲家双子开场',
     'solo-cook': '单人开局',
   };
   const { draft, bundle } =
     id === 'sheep-brewer'
       ? buildSheepOpeningPreset(world.worldbookName)
-      : id === 'solo-cook'
-        ? buildSoloCookOpeningPreset(world.worldbookName)
-        : buildFixedOpeningPreset(world.worldbookName);
+      : id === 'deer-traveler'
+        ? buildDeerOpeningPreset(world.worldbookName)
+        : id === 'rabbit-twins'
+          ? buildTwinsOpeningPreset(world.worldbookName)
+          : id === 'solo-cook'
+            ? buildSoloCookOpeningPreset(world.worldbookName)
+            : buildFixedOpeningPreset(world.worldbookName);
   const result = await runTask(`正在创建${openingLabels[id] ?? '固定开场'}`, () =>
     game.confirmOpeningWorkshop(draft, bundle),
   );
