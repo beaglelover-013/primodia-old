@@ -68,7 +68,7 @@ const openings: OpeningChoice[] = [
     heroine: '不指定女主',
     race: '自由开局',
     time: '解冻月 · 清晨',
-    summary: '没有预设相遇。‹user›从睡梦中醒来，独自迎接铁壶酒馆的新一天。',
+    summary: '没有预设相遇。<user>从睡梦中醒来，独自迎接铁壶酒馆的新一天。',
     image: '',
     imageLabel: '酒馆场景',
   },

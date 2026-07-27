@@ -70,7 +70,6 @@ interface AssistantSwipeSnapshot {
   messageId: number;
   swipeId: number;
   swipes: string[];
-  swipesData: Record<string, any>[];
   swipesInfo: Record<string, any>[];
 }
 
@@ -87,7 +86,6 @@ function readAssistantSwipeSnapshot(messageId: number): AssistantSwipeSnapshot |
       messageId,
       swipeId: Number.isFinite(message.swipe_id) ? message.swipe_id : 0,
       swipes: [...(message.swipes ?? [])],
-      swipesData: (message.swipes_data ?? []).map(data => cloneData(data ?? {})),
       swipesInfo: (message.swipes_info ?? []).map(info => cloneData(info ?? {})),
     };
   } catch (error) {
@@ -105,7 +103,6 @@ async function restoreAssistantSwipeSnapshot(snapshot?: AssistantSwipeSnapshot) 
           message_id: snapshot.messageId,
           swipe_id: snapshot.swipeId,
           swipes: [...snapshot.swipes],
-          swipes_data: snapshot.swipesData.map(data => cloneData(data)),
           swipes_info: snapshot.swipesInfo.map(info => cloneData(info)),
         },
       ],
@@ -116,16 +113,6 @@ async function restoreAssistantSwipeSnapshot(snapshot?: AssistantSwipeSnapshot) 
     console.warn(`[primordia] 恢复 assistant 楼层 #${snapshot.messageId} 的版本列表失败:`, error);
     return false;
   }
-}
-
-function buildActiveSwipeData(messageId: number, statData: Record<string, any>) {
-  const snapshot = readAssistantSwipeSnapshot(messageId);
-  if (!snapshot || snapshot.swipes.length <= 1) return undefined;
-  const activeIndex = Math.max(0, Math.min(snapshot.swipes.length - 1, snapshot.swipeId));
-  const swipesData = snapshot.swipesData.map(data => cloneData(data));
-  while (swipesData.length < snapshot.swipes.length) swipesData.push({});
-  swipesData[activeIndex] = wrapPrimordiaMvuData(cloneData(statData));
-  return swipesData;
 }
 
 export interface PromptPreflightResult {
@@ -980,7 +967,7 @@ function mergeAuthoritativeData(
     keepGeneratedProtagonistStats?: boolean;
   } = {},
 ): Record<string, any> {
-  const next = cloneData(target);
+  const next = mergeData(target, source);
 
   // Frontend-settled flows keep the frontend snapshot. Free-text inventory changes may
   // deliberately arrive through MVU/JSONPatch, so let the parsed target inventory survive
@@ -1425,7 +1412,6 @@ export async function runUnifiedNarrativeRequest(
     const nativeTurn = await runNativeNarrativeTurn(visibleUserAction || prompt, {
       createUserMessage: shouldCreateUserMessage,
       forceGenerateStreaming: callbacks.enableStreamingMaintext === true,
-      userMessageData: wrapPrimordiaMvuData(userMessageData),
       userMessageExtra: {
         primordia: {
           turnId,

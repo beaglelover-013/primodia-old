@@ -130,11 +130,19 @@ export function normalizeMessageVariableOption(messageId?: number): PlainRecord 
 }
 
 export function wrapPrimordiaMvuData(statData: PlainRecord, baseEnvelope: PlainRecord = {}): PlainRecord {
+  const envelope = clonePlainData(baseEnvelope);
+  delete envelope.display_data;
+  delete envelope.delta_data;
+  if (
+    envelope.initialized_lorebooks &&
+    typeof envelope.initialized_lorebooks === 'object' &&
+    !Array.isArray(envelope.initialized_lorebooks) &&
+    Object.keys(envelope.initialized_lorebooks).length === 0
+  ) {
+    delete envelope.initialized_lorebooks;
+  }
   return {
-    display_data: {},
-    delta_data: {},
-    initialized_lorebooks: {},
-    ...clonePlainData(baseEnvelope),
+    ...envelope,
     stat_data: clonePlainData(statData),
   };
 }

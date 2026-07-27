@@ -69,7 +69,7 @@ const openings = computed(() => [
     race: '自由开局',
     time: '解冻月 · 清晨',
     image: '',
-    summary: `没有预设相遇。‹user›从睡梦中醒来，独自迎接${displayedTavernName.value}的新一天。`,
+    summary: `没有预设相遇。<user>从睡梦中醒来，独自迎接${displayedTavernName.value}的新一天。`,
   },
 ]);
 

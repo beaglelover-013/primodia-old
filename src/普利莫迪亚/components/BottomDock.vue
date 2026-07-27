@@ -44,10 +44,6 @@ async function handlePlayerInputKeydown(event: KeyboardEvent) {
   await send();
 }
 
-async function previewBeforeSend() {
-  await game.previewActionDraftBeforeSend();
-}
-
 async function retryLatestCapture() {
   if (captureRetrying.value || game.isGenerating) return;
   captureRetrying.value = true;
@@ -178,10 +174,6 @@ function logTitle(log: EngineLog) {
           >
             <PmIcon name="refresh" :size="14" />
             <span>{{ captureRetrying ? '扫描中' : '捕捉格式' }}</span>
-          </button>
-          <button id="dock-preflight" class="pm-btn big" :disabled="game.isGenerating || (!game.actionDraft.trim() && !game.playerInput.trim())" @click="previewBeforeSend">
-            <PmIcon name="scroll" :size="14" />
-            <span>发送前预检</span>
           </button>
           <button id="dock-send" class="pm-btn dark big" :disabled="game.isGenerating || (!game.actionDraft.trim() && !game.playerInput.trim())" @click="send">
             <PmIcon name="send" :size="14" />
@@ -553,7 +545,6 @@ function logTitle(log: EngineLog) {
     margin-left: 0;
   }
   .dock:not(.mobile-details-open) .draft-list,
-  .dock:not(.mobile-details-open) #dock-preflight,
   .dock:not(.mobile-details-open) .dock-tips {
     display: none;
   }

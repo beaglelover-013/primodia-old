@@ -8,7 +8,6 @@ let nativeNarrativeTurnInFlight = false;
 
 export interface NativeNarrativeTurnOptions {
   createUserMessage?: boolean;
-  userMessageData?: Record<string, any>;
   userMessageExtra?: Record<string, any>;
   onStreamingText?: (text: string) => void;
   /** Compatibility flag; same-floor mode still sends through ST's native chain. */
@@ -266,7 +265,6 @@ async function stampNativeUserMessage(messageId: number, options: NativeNarrativ
     [
       {
         message_id: messageId,
-        data: options.userMessageData ?? current.data,
         extra: {
           ...(current.extra ?? {}),
           ...(options.userMessageExtra ?? {}),
@@ -368,7 +366,6 @@ export async function runNativeNarrativeTurn(
               {
                 role: 'user',
                 message: userText,
-                data: options.userMessageData,
                 extra: options.userMessageExtra,
               },
             ],

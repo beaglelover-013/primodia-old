@@ -9478,6 +9478,30 @@ export const useGameStore = defineStore('primordia', () => {
     return output;
   }
 
+  const OPENING_INITVAR_COPY_PATHS = [
+    '\u4e16\u754c.\u5f53\u524d\u5386\u6cd5.\u65f6\u95f4',
+    '\u9152\u9986.\u8d44\u91d1',
+    '\u4eba\u7269\u7f81\u7eca',
+  ];
+
+  function readPlainPath(source: Record<string, any>, path: string) {
+    let cursor: unknown = source;
+    for (const part of path.split('.').filter(Boolean)) {
+      if (!cursor || typeof cursor !== 'object' || Array.isArray(cursor)) return undefined;
+      if (!Object.prototype.hasOwnProperty.call(cursor, part)) return undefined;
+      cursor = (cursor as Record<string, any>)[part];
+    }
+    return cursor;
+  }
+
+  function applyOpeningInitvarPatch(target: PrimordiaStatData, patch: Record<string, any>) {
+    OPENING_INITVAR_COPY_PATHS.forEach(path => {
+      const value = readPlainPath(patch, path);
+      if (typeof value === 'undefined') return;
+      setPlainPath(target, path, clonePlainData(value));
+    });
+  }
+
   function readInitStatData() {
     try {
       if (typeof Mvu !== 'undefined' && typeof Mvu.getMvuData === 'function') {
@@ -9649,7 +9673,9 @@ export const useGameStore = defineStore('primordia', () => {
     if (!bundle.story.initvar || typeof bundle.story.initvar !== 'object') {
       throw new Error('开局 AI 没有生成有效 initvar，不能创建第 1 层。');
     }
-    const statData = normalizeOpeningStatDataShape(mergeOpeningStatData(readInitStatData(), bundle.story.initvar));
+    const statData = readInitStatData();
+    applyOpeningInitvarPatch(statData, bundle.story.initvar);
+    normalizeOpeningStatDataShape(statData);
     const tavernTerritory = draft.tavern.territory.trim() || draft.region.trim() || '韦斯托利亚';
     const tavernCity = draft.tavern.city.trim() || '布拉姆维克';
     const tavernPlace = draft.tavern.place.trim() || '主厅接待区';
@@ -11267,6 +11293,23 @@ export const useGameStore = defineStore('primordia', () => {
     const heroine = heroines.value.find(item => item.id === heroineId);
     if (!heroine) return false;
 
+    const statData = readMessageStatData();
+    let wroteMessage = false;
+    if (statData) {
+      const nextData = clonePlainData(statData);
+      if (nextData.人物羁绊 && typeof nextData.人物羁绊 === 'object' && !Array.isArray(nextData.人物羁绊)) {
+        delete nextData.人物羁绊[heroine.name];
+        delete nextData.人物羁绊[heroine.id];
+      }
+      if (nextData.人物 && typeof nextData.人物 === 'object' && !Array.isArray(nextData.人物)) {
+        delete nextData.人物[heroine.name];
+        delete nextData.人物[heroine.id];
+        if (Object.keys(nextData.人物).length === 0) delete nextData.人物;
+      }
+      wroteMessage = await writeCurrentMessageStatData(nextData);
+      applyMvuStatData(nextData, { restoreInventory: true });
+    }
+
     heroines.value = heroines.value.filter(item => item.id !== heroineId);
     delete characterWorldbookBindings.value[heroine.id];
     delete characterBehaviorLibraries.value[heroine.id];
@@ -11274,13 +11317,13 @@ export const useGameStore = defineStore('primordia', () => {
     if (selectedHeroineId.value === heroine.id) selectedHeroineId.value = heroines.value[0]?.id ?? null;
 
     await writeChatSave();
-    pushLog('系统', `已删除配角「${heroine.name}」。`, {
+    pushLog('系统', `已删除配角「${heroine.name}」${statData ? (wroteMessage ? '，并已同步当前楼层变量。' : '，但当前楼层变量写入失败。') : '，但没有读到当前楼层变量。'}`, {
       source: 'engine',
       authoritative: true,
-      tone: 'cyan',
+      tone: !statData || wroteMessage ? 'cyan' : 'amber',
       actionType: 'CHARACTER_DELETE',
     });
-    return true;
+    return !statData || wroteMessage;
   }
 
   async function setFrontendMvuData(data: Record<string, unknown>) {
