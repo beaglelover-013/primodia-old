@@ -117,7 +117,7 @@ async function runFastForward() {
   }
   game.appendDraft(
     `我让「${game.tavernName}」连续经营约${hours}小时，营业风格偏「${intensity}」。观察客流、点单、收入、疲惫和酒馆里的气氛变化。`,
-    { type: 'TAVERN_FAST_FORWARD' },
+    { type: 'TAVERN_FAST_FORWARD', frontendMvuScope: result.frontendMvuScope },
   );
   game.pushLog('提示', `经营快进 · ${intensity} · ${hours}小时 已加入行动框。`);
   fastForward.open = false;
@@ -136,7 +136,7 @@ function toggleBusinessOpen() {
     open
       ? `我走到「${game.tavernName}」门口，把门口招牌翻到“营业”，推开门，让酒馆正式开始接待客人。`
       : `我走到「${game.tavernName}」门口，把门口招牌翻到“歇业”，收住客流，让酒馆暂时不再接待新客。`,
-    { type: 'BUSINESS_TOGGLE' },
+    { type: 'BUSINESS_TOGGLE', frontendMvuScope: result.frontendMvuScope },
   );
   game.pushLog('提示', `${open ? '开始营业' : '歇业收店'} 已加入行动框。`);
 }
@@ -166,6 +166,7 @@ function dispatchClean(r: TavernRegion) {
   }
   game.appendDraft(`我清扫并维护「${r.name}」，整理现场、擦洗污痕并检查设施状态。`, {
     type: 'REGION_CLEAN',
+    frontendMvuScope: result.frontendMvuScope,
     undoPatch: {
       type: 'REGION_CLEAN',
       regionId: r.id,
@@ -217,6 +218,7 @@ function assignWorkerToRegion(r: TavernRegion) {
   }
   game.appendDraft(`我安排 ${worker.name} 前往「${r.name}」当值。`, {
     type: 'WORKER_ASSIGN',
+    frontendMvuScope: result.frontendMvuScope,
     undoPatch: {
       type: 'WORKER_ASSIGN',
       heroineId: worker.id,

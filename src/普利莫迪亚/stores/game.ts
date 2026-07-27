@@ -797,6 +797,8 @@ export interface DraftAction {
   hidden?: boolean;
   aiHint?: string;
   settledFact?: string;
+  frontendMvuScope?: FrontendMvuScope;
+  frontendMvuSnapshot?: PrimordiaStatData;
   stateDiscovery?: {
     itemName: string;
     category: InventoryItem['category'];
@@ -843,6 +845,8 @@ export interface StoryActionInput {
   settled?: boolean;
   undoPatch?: DraftUndoPatch;
   inputText?: string;
+  frontendMvuScope?: FrontendMvuScope;
+  frontendMvuSnapshot?: PrimordiaStatData;
 }
 
 export interface PseudoZeroNarrativeOptions {
@@ -1051,7 +1055,23 @@ export interface ActionResult extends ActionResultBase {
   aiHint?: string;
   stockDeltas?: Record<string, number>;
   craftId?: string;
+  frontendMvuScope?: FrontendMvuScope;
+  frontendMvuSnapshot?: PrimordiaStatData;
   logs?: Array<{ kind: EngineLog['kind']; text: string }>;
+}
+
+export interface FrontendMvuScope {
+  resources?: boolean;
+  calendar?: boolean;
+  location?: boolean;
+  reputation?: boolean;
+  business?: boolean;
+  protagonistEnergy?: boolean;
+  protagonistCooking?: boolean;
+  farmBrew?: boolean;
+  heroineAffection?: string[];
+  heroineLocation?: string[];
+  regions?: string[];
 }
 
 export interface HealthCheckItem {
@@ -3711,6 +3731,8 @@ export const useGameStore = defineStore('primordia', () => {
     stateDiscovery?: DraftAction['stateDiscovery'];
     aiHint?: string;
     settledFact?: string;
+    frontendMvuScope?: FrontendMvuScope;
+    frontendMvuSnapshot?: PrimordiaStatData;
   } = {}) {
     if (!line.trim()) return;
     const type = options.type ?? 'TEXT';
@@ -3730,6 +3752,8 @@ export const useGameStore = defineStore('primordia', () => {
       stateDiscovery: options.stateDiscovery,
       aiHint: options.aiHint,
       settledFact: options.settledFact,
+      frontendMvuScope: options.frontendMvuScope,
+      frontendMvuSnapshot: options.frontendMvuSnapshot,
     });
   }
   function appendHiddenDraftRequirement(action: StoryActionInput) {
@@ -3741,6 +3765,8 @@ export const useGameStore = defineStore('primordia', () => {
       hidden: true,
       aiHint: action.aiHint,
       settledFact: action.settled === false ? undefined : action.settledFact ?? action.fact,
+      frontendMvuScope: action.frontendMvuScope,
+      frontendMvuSnapshot: action.frontendMvuSnapshot,
     });
   }
   function clearActionDraft() {
@@ -7787,6 +7813,96 @@ export const useGameStore = defineStore('primordia', () => {
     };
   }
 
+  function mergeFrontendMvuScopes(...scopes: Array<FrontendMvuScope | null | undefined>): FrontendMvuScope {
+    const merged: FrontendMvuScope = {};
+    const appendNames = (key: 'heroineAffection' | 'heroineLocation' | 'regions', names?: string[]) => {
+      if (!names?.length) return;
+      merged[key] = [...new Set([...(merged[key] ?? []), ...names.filter(Boolean)])];
+    };
+    for (const scope of scopes) {
+      if (!scope) continue;
+      if (scope.resources) merged.resources = true;
+      if (scope.calendar) merged.calendar = true;
+      if (scope.location) merged.location = true;
+      if (scope.reputation) merged.reputation = true;
+      if (scope.business) merged.business = true;
+      if (scope.protagonistEnergy) merged.protagonistEnergy = true;
+      if (scope.protagonistCooking) merged.protagonistCooking = true;
+      if (scope.farmBrew) merged.farmBrew = true;
+      appendNames('heroineAffection', scope.heroineAffection);
+      appendNames('heroineLocation', scope.heroineLocation);
+      appendNames('regions', scope.regions);
+    }
+    return merged;
+  }
+
+  function frontendMvuScopeForAction(action: GameAction): FrontendMvuScope | undefined {
+    switch (action.type) {
+      case 'BUY_ITEMS':
+      case 'INVENTORY_MOVE_TO_STORAGE':
+      case 'INVENTORY_MOVE_TO_SATCHEL':
+      case 'USE_ITEM':
+      case 'COOK_DISH':
+      case 'SERVE_DISH':
+      case 'BREW_TAP':
+        return { resources: true, farmBrew: true };
+      case 'INVENTORY_MOVE_CATEGORY':
+        return { resources: true };
+      case 'FARM_PLANT':
+      case 'FARM_EXPAND':
+      case 'FARM_REMOVE':
+      case 'FARM_HARVEST':
+        return { resources: action.type === 'FARM_PLANT' || action.type === 'FARM_HARVEST', farmBrew: true };
+      case 'MONEY_TRANSFER':
+        return { resources: true };
+      case 'FACILITY_ADD': {
+        const region = regions.value.find(item => item.id === action.regionId);
+        return { resources: true, regions: region ? [region.name] : [] };
+      }
+      case 'TAVERN_FAST_FORWARD':
+        return {
+          resources: true,
+          calendar: true,
+          reputation: true,
+          protagonistEnergy: true,
+        };
+      case 'BUSINESS_TOGGLE':
+        return { business: true };
+      case 'REGION_CLEAN': {
+        const region = regions.value.find(item => item.id === action.regionId);
+        return { regions: region ? [region.name] : [] };
+      }
+      case 'WORKER_ASSIGN': {
+        const heroine = heroines.value.find(item => item.id === action.heroineId);
+        return {
+          heroineLocation: heroine ? [heroine.name] : [],
+          regions: regions.value.map(region => region.name),
+        };
+      }
+      case 'MAP_TRAVEL':
+      case 'LEAVE_SHOP':
+        return { location: true, protagonistEnergy: action.type === 'MAP_TRAVEL' };
+      case 'CHARACTER_CHAT': {
+        const heroine = heroines.value.find(item => item.id === action.heroineId);
+        return {
+          protagonistEnergy: true,
+          heroineAffection: heroine ? [heroine.name] : [],
+        };
+      }
+      case 'CHARACTER_GIFT': {
+        const heroine = heroines.value.find(item => item.id === action.heroineId);
+        return {
+          resources: true,
+          heroineAffection: heroine ? [heroine.name] : [],
+        };
+      }
+      case 'PROTAGONIST_TRAIN_COOKING':
+        return { protagonistCooking: true };
+      default:
+        return undefined;
+    }
+  }
+
   function enrichActionResult(action: GameAction, result: ActionResult, before: {
     money: number;
     wallet: number;
@@ -7807,6 +7923,13 @@ export const useGameStore = defineStore('primordia', () => {
       before.location.sceneType !== afterLocation.sceneType ||
       before.location.relatedName !== afterLocation.relatedName;
 
+    const frontendMvuScope = result.frontendMvuScope ?? (result.ok ? frontendMvuScopeForAction(action) : undefined);
+    const frontendMvuSnapshot =
+      result.frontendMvuSnapshot ??
+      (frontendMvuScope
+        ? statDataWithFrontendSettlement(buildFrontendMvuSnapshot(result.summary ?? result.message), frontendMvuScope)
+        : undefined);
+
     return {
       ...result,
       actionType: result.actionType ?? action.type,
@@ -7816,6 +7939,8 @@ export const useGameStore = defineStore('primordia', () => {
       timeChange: result.timeChange ?? (timeDelta ? { minutes: timeDelta, from: before.time.label, to: afterTime.label } : undefined),
       inventoryChanges: result.inventoryChanges ?? (inventoryChanges.length ? inventoryChanges : undefined),
       locationChange: result.locationChange ?? (locationChanged ? { from: before.location, to: afterLocation } : undefined),
+      frontendMvuScope,
+      frontendMvuSnapshot,
     };
   }
 
@@ -8046,8 +8171,10 @@ export const useGameStore = defineStore('primordia', () => {
     await writeChatSave();
     // This settlement is still pending narration. The request path attaches
     // it to the new user/assistant floors; writing here would mutate history.
-    if (!narrative) return result;
-    if (result.shouldAskAI === false) return result;
+    if (!narrative) {
+      await writeFrontendSettlementToCurrentMessage(result.frontendMvuScope, `${action.type} 结算`);
+      return result;
+    }
     const resultHint = result.aiHint?.trim() === '无需生成正文。' && narrative.aiHint?.trim() ? '' : (result.aiHint?.trim() ?? '');
     const narrativeHint = narrative.aiHint?.trim() ?? '';
     const combinedAiHint =
@@ -8077,6 +8204,8 @@ export const useGameStore = defineStore('primordia', () => {
         type: action.type,
         aiHint: combinedAiHint,
         settledFact: result.settledFact,
+        frontendMvuScope: result.frontendMvuScope,
+        frontendMvuSnapshot: result.frontendMvuSnapshot,
         stateDiscovery:
           action.type === 'USE_ITEM' && action.target?.startsWith('酒馆区域：')
             ? (() => {
@@ -8144,6 +8273,8 @@ export const useGameStore = defineStore('primordia', () => {
               actionType: action.type,
             }
           : undefined,
+      frontendMvuScope: result.frontendMvuScope,
+      frontendMvuSnapshot: result.frontendMvuSnapshot,
     });
     if (rollbackSnapshot && !narrativeOk) {
       const rollbackReason =
@@ -8718,6 +8849,7 @@ export const useGameStore = defineStore('primordia', () => {
       return;
     }
     const nextData = clonePlainData(statData);
+    writeCurrentSceneToStatData(nextData);
     const writeMoneyBucket = (name: '随身钱袋' | '钱匣', copper: number) => {
       const safeCopper = normalizeCopperValue(copper);
       const parts = copperToParts(safeCopper);
@@ -8735,7 +8867,6 @@ export const useGameStore = defineStore('primordia', () => {
     setPlainPath(nextData, '酒馆.资金.折算合计铜币', normalizeCopperValue(walletCopper.value + cashboxCopper.value));
     const wrote = await writeCurrentMessageStatData(nextData);
     if (wrote) {
-      applyMvuStatData(nextData);
       pushLog('系统', `调试资金已写入当前楼层变量 · ${moneyAccountLabel(account)}`, { source: 'engine', authoritative: true, tone: 'green' });
     } else {
       pushLog('提示', '调试资金写入当前楼层变量失败。', { source: 'engine', authoritative: true, tone: 'amber' });
@@ -8749,16 +8880,27 @@ export const useGameStore = defineStore('primordia', () => {
       return;
     }
     const nextData = clonePlainData(statData);
+    writeCurrentSceneToStatData(nextData);
     setPlainPath(nextData, '主角.精力', {
       当前值: Math.max(0, Math.floor(energy.value)),
       上限: Math.max(1, Math.floor(energy.max)),
     });
     const wrote = await writeCurrentMessageStatData(nextData);
     if (wrote) {
-      applyMvuStatData(nextData);
       pushLog('系统', '主角精力已写入当前楼层变量。', { source: 'engine', authoritative: true, tone: 'green' });
     } else {
       pushLog('提示', '主角精力写入当前楼层变量失败。', { source: 'engine', authoritative: true, tone: 'amber' });
+    }
+  }
+
+  function writeCurrentSceneToStatData(statData: PrimordiaStatData) {
+    sanitizeCurrentLocation();
+    setPlainPath(statData, '世界.当前地点.区域', location.region);
+    setPlainPath(statData, '世界.当前地点.具体位置', location.place);
+    setPlainPath(statData, '主角.所在位置', protagonist.located);
+    const shopName = currentSceneType.value === '商铺' ? currentShopNameFromLocation() : '';
+    if (shopName || readFirstPath(statData, legacyPathAliases('街坊商铺.当前商铺'), undefined) !== undefined) {
+      setPlainPath(statData, '街坊商铺.当前商铺', shopName);
     }
   }
 
@@ -11785,6 +11927,263 @@ export const useGameStore = defineStore('primordia', () => {
     return nextData;
   }
 
+  function inventoryItemToMvuRecord(item: InventoryItem) {
+    const portionsPerUnit = portionsPerUnitForItem(item);
+    const record: Record<string, unknown> = {
+      数量: Math.max(0, Math.floor(Number(item.qty) || 0)),
+      每件份数: portionsPerUnit,
+      当前剩余份数: remainingPortionsForItem(item),
+      标签: clonePlain(item.tags ?? []),
+      价格折合铜币: Math.max(0, Math.floor(Number(item.priceCopper) || 0)),
+    };
+    if (item.unit) record.单位 = item.unit;
+    if (item.portionUnit) record.份数单位 = item.portionUnit;
+    if (item.batch) record.批次 = item.batch;
+    if (item.baseName) record.基础名称 = item.baseName;
+    if (item.quality) record.搭配判定 = item.quality;
+    if (item.desc) record.备注 = item.desc;
+    return record;
+  }
+
+  function inventoryCollectionToMvuRoot(items: InventoryItem[]) {
+    const root: Record<string, Record<string, unknown>> = {
+      食材: {},
+      调料: {},
+      成品: {},
+      酒水: {},
+      杂物: {},
+      日用品: {},
+    };
+    const usedKeys = new Set<string>();
+    items.forEach((item, index) => {
+      if (!item.name || item.qty <= 0) return;
+      const category = normalizeInventoryCategory(item.category);
+      if (!root[category]) root[category] = {};
+      let key = item.name;
+      if (usedKeys.has(`${category}.${key}`)) key = `${item.name} ${item.batch || item.tags?.[0] || index + 1}`;
+      usedKeys.add(`${category}.${key}`);
+      root[category][key] = inventoryItemToMvuRecord(item);
+    });
+    return root;
+  }
+
+  function statDataWithFrontendResources(statData: PrimordiaStatData) {
+    const nextData = clonePlainData(statData);
+    setPlainPath(nextData, '酒馆.资金.随身钱袋', moneyBucketFromCopper(walletCopper.value));
+    setPlainPath(nextData, '酒馆.资金.钱匣', moneyBucketFromCopper(cashboxCopper.value));
+    setPlainPath(nextData, '酒馆.资金.折算合计铜币', normalizeCopperValue(walletCopper.value + cashboxCopper.value));
+    setPlainPath(nextData, '库房', inventoryCollectionToMvuRoot(inventory.value));
+    setPlainPath(nextData, '行囊', inventoryCollectionToMvuRoot(satchel.value));
+    return nextData;
+  }
+
+  function facilityToMvuRecord(facility: RegionFacility) {
+    return {
+      状态: facility.condition,
+      风格: facility.style,
+      描述: facility.description,
+      价格折合铜币: Math.max(0, Math.floor(Number(facility.priceCopper) || 0)),
+    };
+  }
+
+  function statDataWithFrontendSettlement(statData: PrimordiaStatData, scope?: FrontendMvuScope) {
+    if (!scope) return clonePlainData(statData);
+    let nextData = scope.resources ? statDataWithFrontendResources(statData) : clonePlainData(statData);
+
+    if (scope.calendar) nextData = statDataWithCurrentCalendar(nextData);
+    if (scope.location) {
+      setPlainPath(nextData, '世界.当前地点.区域', location.region);
+      setPlainPath(nextData, '世界.当前地点.具体位置', location.place);
+      setPlainPath(nextData, '主角.所在位置', protagonist.located);
+    }
+    if (scope.reputation) {
+      const snapshot = reputationMvuSnapshot();
+      setPlainPath(nextData, '酒馆.声望', snapshot);
+      setPlainPath(nextData, '酒馆.声望值', snapshot.数值);
+      setPlainPath(nextData, '酒馆.声望名', snapshot.名称);
+    }
+    if (scope.business) {
+      setPlainPath(nextData, '酒馆.今日营业状态', isBusinessOpen.value ? '营业中' : '歇业');
+    }
+    if (scope.protagonistEnergy) {
+      setPlainPath(nextData, '主角.精力.当前值', Math.max(0, Math.floor(energy.value)));
+      setPlainPath(nextData, '主角.精力.上限', Math.max(1, Math.floor(energy.max)));
+    }
+    if (scope.protagonistCooking) {
+      setPlainPath(nextData, '主角.烹饪等级.等级', Math.max(1, Math.floor(protagonist.cookingLevel)));
+      setPlainPath(nextData, '主角.烹饪等级.称号', cookingRank.value);
+      setPlainPath(nextData, '主角.烹饪等级.做菜次数', Math.max(0, Math.floor(protagonist.cookingExp)));
+      setPlainPath(nextData, '主角.烹饪等级.下级所需次数', Math.max(1, Math.floor(protagonist.cookingExpMax)));
+    }
+    if (scope.farmBrew) {
+      setPlainPath(
+        nextData,
+        '农田与酒窖.农田',
+        Object.fromEntries(
+          farmPlots.value.map((plot, index) => [
+            plot.label || `第${plotIndexFromKey(plot.id) ?? index + 1}号畦`,
+            {
+              作物: plot.crop === '空畦' ? '' : plot.crop,
+              状态: plot.crop === '空畦' ? '空畦' : plot.season,
+              阶段: plot.stage,
+              阶段上限: plot.stageMax,
+              预计产出: plot.expectedHarvest,
+              播种日: plot.plantedDay ?? '',
+              成熟日: plot.matureDay ?? '',
+              批次标签: clonePlain(plot.batchTags ?? []),
+            },
+          ]),
+        ),
+      );
+      setPlainPath(
+        nextData,
+        '农田与酒窖.酒窖桶',
+        Object.fromEntries(
+          brews.value.map(barrel => [
+            barrel.name,
+            {
+              状态: barrel.filling,
+              内容物: barrel.name,
+              类型: barrel.brewType ?? '酒水',
+              酿造开始日: barrel.startedDay,
+              收获日: barrel.matureDay,
+              预计产出: barrel.expected,
+            },
+          ]),
+        ),
+      );
+    }
+
+    for (const name of scope.heroineAffection ?? []) {
+      const heroine = heroines.value.find(item => item.name === name || item.id === name);
+      if (!heroine) continue;
+      setPlainPath(nextData, `人物羁绊.${heroine.name}.好感`, Math.max(0, Math.floor(heroine.affection)));
+      setPlainPath(nextData, `人物羁绊.${heroine.name}.羁绊阶段`, Math.max(1, Math.floor(heroine.stage)));
+      setPlainPath(nextData, `人物羁绊.${heroine.name}.阶段文字`, heroine.stageName);
+    }
+    for (const name of scope.heroineLocation ?? []) {
+      const heroine = heroines.value.find(item => item.name === name || item.id === name);
+      if (!heroine) continue;
+      setPlainPath(nextData, `人物羁绊.${heroine.name}.所在位置`, heroine.located);
+    }
+
+    for (const name of scope.regions ?? []) {
+      const region = regions.value.find(item => item.name === name || item.id === name);
+      if (!region) continue;
+      setPlainPath(nextData, `酒馆.区域.${region.name}.状态`, region.condition);
+      setPlainPath(nextData, `酒馆.区域.${region.name}.分配员工`, region.staff ?? '');
+      for (const facility of region.facilities) {
+        setPlainPath(nextData, `酒馆.区域.${region.name}.设施.${facility.name}`, facilityToMvuRecord(facility));
+      }
+      for (const room of region.rooms ?? []) {
+        for (const facility of room.facilities) {
+          setPlainPath(nextData, `酒馆.客房.${room.name}.设施.${facility.name}`, facilityToMvuRecord(facility));
+        }
+      }
+    }
+    return nextData;
+  }
+
+  function preserveFrontendSettledFields(
+    statData: PrimordiaStatData,
+    settledSnapshot: PrimordiaStatData,
+    scope?: FrontendMvuScope,
+  ) {
+    if (!scope) return clonePlainData(statData);
+    const nextData = clonePlainData(statData);
+    const copyPath = (path: string) => {
+      const value = readFirstPath(settledSnapshot, [path], undefined);
+      if (value !== undefined) setPlainPath(nextData, path, clonePlainData(value));
+    };
+    if (scope.resources) {
+      copyPath('酒馆.资金');
+      copyPath('库房');
+      copyPath('行囊');
+    }
+    if (scope.calendar) copyPath('世界.当前历法');
+    if (scope.location) {
+      copyPath('世界.当前地点');
+      copyPath('主角.所在位置');
+    }
+    if (scope.reputation) {
+      copyPath('酒馆.声望');
+      copyPath('酒馆.声望值');
+      copyPath('酒馆.声望名');
+    }
+    if (scope.business) copyPath('酒馆.今日营业状态');
+    if (scope.protagonistEnergy) copyPath('主角.精力');
+    if (scope.protagonistCooking) copyPath('主角.烹饪等级');
+    if (scope.farmBrew) copyPath('农田与酒窖');
+    for (const name of scope.heroineAffection ?? []) {
+      copyPath(`人物羁绊.${name}.好感`);
+      copyPath(`人物羁绊.${name}.羁绊阶段`);
+      copyPath(`人物羁绊.${name}.阶段文字`);
+    }
+    for (const name of scope.heroineLocation ?? []) copyPath(`人物羁绊.${name}.所在位置`);
+    for (const name of scope.regions ?? []) {
+      copyPath(`酒馆.区域.${name}.状态`);
+      copyPath(`酒馆.区域.${name}.分配员工`);
+      copyPath(`酒馆.区域.${name}.设施`);
+      const region = regions.value.find(item => item.name === name || item.id === name);
+      for (const room of region?.rooms ?? []) copyPath(`酒馆.客房.${room.name}.设施`);
+    }
+    return nextData;
+  }
+
+  function frontendSettledFieldsMatch(
+    statData: PrimordiaStatData | null,
+    settledSnapshot: PrimordiaStatData,
+    scope?: FrontendMvuScope,
+  ) {
+    if (!scope || !statData) return !scope;
+    const paths: string[] = [];
+    if (scope.resources) paths.push('酒馆.资金', '库房', '行囊');
+    if (scope.calendar) paths.push('世界.当前历法');
+    if (scope.location) paths.push('世界.当前地点', '主角.所在位置');
+    if (scope.reputation) paths.push('酒馆.声望', '酒馆.声望值', '酒馆.声望名');
+    if (scope.business) paths.push('酒馆.今日营业状态');
+    if (scope.protagonistEnergy) paths.push('主角.精力');
+    if (scope.protagonistCooking) paths.push('主角.烹饪等级');
+    if (scope.farmBrew) paths.push('农田与酒窖');
+    for (const name of scope.heroineAffection ?? []) {
+      paths.push(`人物羁绊.${name}.好感`, `人物羁绊.${name}.羁绊阶段`, `人物羁绊.${name}.阶段文字`);
+    }
+    for (const name of scope.heroineLocation ?? []) paths.push(`人物羁绊.${name}.所在位置`);
+    for (const name of scope.regions ?? []) {
+      paths.push(`酒馆.区域.${name}.状态`, `酒馆.区域.${name}.分配员工`, `酒馆.区域.${name}.设施`);
+    }
+    return paths.every(path => {
+      const actual = readFirstPath(statData, [path], undefined);
+      const expected = readFirstPath(settledSnapshot, [path], undefined);
+      return JSON.stringify(actual) === JSON.stringify(expected);
+    });
+  }
+
+  async function writeFrontendSettlementToCurrentMessage(scope?: FrontendMvuScope, reason = '前端行为结算') {
+    if (!scope) return true;
+    const baseData = readMessageStatData();
+    if (!baseData) {
+      pushLog('提示', `${reason}未能写入变量：当前楼层没有可读取的 stat_data。`, {
+        source: 'engine',
+        authoritative: true,
+        tone: 'amber',
+        actionType: 'VARIABLE_WRITE',
+      });
+      return false;
+    }
+    const nextData = statDataWithFrontendSettlement(baseData, scope);
+    const wrote = await writeCurrentMessageStatData(nextData);
+    if (!wrote) {
+      pushLog('提示', `${reason}未能写入当前楼层变量。`, {
+        source: 'engine',
+        authoritative: true,
+        tone: 'amber',
+        actionType: 'VARIABLE_WRITE',
+      });
+    }
+    return wrote;
+  }
+
   function countInventoryItemsFromMvu(data: PrimordiaStatData, rootName: '库房' | '行囊') {
     const root = readRecordPath(data, [rootName]);
     return Object.values(root).reduce((sum, category) => sum + Object.keys(asRecord(category)).length, 0);
@@ -12356,6 +12755,8 @@ export const useGameStore = defineStore('primordia', () => {
       backgroundFlowPlan?: BackgroundFlowPlan | null;
       businessVisitorPlan?: TavernBusinessVisitorPlan | null;
       characterVisitEvents?: CharacterVisitEvent[];
+      frontendMvuScope?: FrontendMvuScope;
+      frontendMvuSnapshot?: PrimordiaStatData;
     } = {},
   ): Promise<boolean> {
     const reloadMvu = options.reloadMvu ?? true;
@@ -12400,6 +12801,10 @@ export const useGameStore = defineStore('primordia', () => {
       operationsRollback = snapshotLocalSettlement();
       const operationsSummaries = settleOperationsForTurn(completedTurnTarget);
       operationsChanged = operationsSummaries.length > 0;
+      let frontendMvuScope = mergeFrontendMvuScopes(
+        options.frontendMvuScope,
+        operationsChanged ? { resources: true } : undefined,
+      );
       const duePromiseMemoIds = duePromiseMemosForTurn.map(memo => memo.id);
       const normalizedScenePrompt = hasFullNarrationPromptSections(scenePrompt)
         ? scenePrompt
@@ -12416,7 +12821,16 @@ export const useGameStore = defineStore('primordia', () => {
       const promptWithCharacterVisits = appendCharacterVisitPromptBlock(promptWithBusinessAgreementEvents, characterVisitEventsForTurn);
       const scenePromptForRequest = appendDuePromiseMemoBlock(promptWithCharacterVisits, duePromiseMemosForTurn);
       const temporaryStateKeysBeforeTurn = captureTemporaryStateKeys();
-      const authoritativeData = buildAuthoritativeRequestData(combined);
+      const currentAuthoritativeData = buildAuthoritativeRequestData(combined);
+      const capturedFrontendSettlement = options.frontendMvuSnapshot
+        ? preserveFrontendSettledFields(
+            currentAuthoritativeData,
+            options.frontendMvuSnapshot,
+            options.frontendMvuScope,
+          )
+        : currentAuthoritativeData;
+      const authoritativeData = statDataWithFrontendSettlement(capturedFrontendSettlement, operationsChanged ? { resources: true } : undefined);
+      let frontendSettledSnapshot = authoritativeData;
       const isPrebuiltNarrationPrompt = /<玩家本回合行动>|【叙述者权限边界】|【当前权威局势】|【输出格式】/.test(scenePromptForRequest);
       const prebuiltAllowsVariablePatch =
         isPrebuiltNarrationPrompt &&
@@ -12473,7 +12887,6 @@ export const useGameStore = defineStore('primordia', () => {
             : false;
         if (result.mvuData && canApplyScenePatch && (sceneUpdatedFromMvu || result.hasScenePatch)) syncGeneratedShopWithLocation();
         if (finalMvuData) {
-          applyMvuStatData(finalMvuData, { restoreInventory: true });
           const inventorySynced = applyInventoryPatch;
           const satchelSynced = applyInventoryPatch;
           const temporaryStatesSynced = applyTemporaryStatesFromMvuData(finalMvuData);
@@ -12497,7 +12910,14 @@ export const useGameStore = defineStore('primordia', () => {
           }
           logMvuSyncMismatches(finalMvuData);
         }
-        if (result.latest?.craftResult) applyCraftResult(result.latest.craftResult);
+        if (result.latest?.craftResult && applyCraftResult(result.latest.craftResult)) {
+          const craftResultScope: FrontendMvuScope = {
+            resources: true,
+            farmBrew: /酒窖|桶|熟成|发酵|陈放/.test(result.latest.craftResult.destination),
+          };
+          frontendMvuScope = mergeFrontendMvuScopes(frontendMvuScope, craftResultScope);
+          frontendSettledSnapshot = statDataWithFrontendSettlement(frontendSettledSnapshot, craftResultScope);
+        }
         if (result.latest?.guestUpdates?.length) applyGuestUpdates(result.latest.guestUpdates, successfulNarrationTurn.value + 1);
         if (result.latest?.regularGuestUpdates?.length) addPendingRegularGuestUpdates(result.latest.regularGuestUpdates, successfulNarrationTurn.value + 1);
         if (result.latest?.rumorRecords?.length) addRumorRecords(result.latest.rumorRecords, successfulNarrationTurn.value + 1);
@@ -12529,6 +12949,28 @@ export const useGameStore = defineStore('primordia', () => {
         if (result.latest?.tavernStateUpdates?.length && applyTavernStateUpdates(result.latest.tavernStateUpdates, stateDiscoveries, completedTurn)) {
           const stateBase = finalMvuData ?? getAuthoritativeMvuData(generatedMessageId, '经营状态收录');
           finalMvuData = statDataWithCurrentTemporaryStates(stateBase);
+        }
+        finalMvuData = preserveFrontendSettledFields(
+          finalMvuData ?? frontendSettledSnapshot,
+          frontendSettledSnapshot,
+          frontendMvuScope,
+        );
+        let wroteFinalMvuData = await writeCurrentMessageStatData(finalMvuData, generatedMessageId);
+        if (
+          wroteFinalMvuData &&
+          !frontendSettledFieldsMatch(readMessageStatData(generatedMessageId), frontendSettledSnapshot, frontendMvuScope)
+        ) {
+          wroteFinalMvuData = await writeCurrentMessageStatData(finalMvuData, generatedMessageId);
+        }
+        if (wroteFinalMvuData) {
+          applyMvuStatData(finalMvuData, { restoreInventory: true });
+        } else {
+          pushLog('提示', '本回合前端资源已经结算，但写入新楼层变量失败；请重读变量或重新发送前检查。', {
+            source: 'engine',
+            authoritative: true,
+            tone: 'amber',
+            actionType: 'VARIABLE_WRITE',
+          });
         }
         successfulNarrationTurn.value = completedTurn;
         clearActionDraft();
@@ -12581,6 +13023,12 @@ export const useGameStore = defineStore('primordia', () => {
       const queuedRequirements = draftActions.value.filter(action => action.hidden || action.aiHint?.trim() || action.settledFact?.trim());
       const hiddenAiHint = queuedRequirements.map(action => action.aiHint?.trim()).filter(Boolean).join('\n\n');
       const hiddenSettledFact = aggregateHiddenSettledFacts(queuedRequirements);
+      const frontendMvuScope = mergeFrontendMvuScopes(...draftActions.value.map(action => action.frontendMvuScope));
+      const frontendMvuSnapshot = draftActions.value.reduce<PrimordiaStatData | undefined>((snapshot, action) => {
+        if (!action.frontendMvuSnapshot) return snapshot;
+        if (!snapshot) return clonePlainData(action.frontendMvuSnapshot);
+        return preserveFrontendSettledFields(snapshot, action.frontendMvuSnapshot, action.frontendMvuScope);
+      }, undefined);
       const isPrebuiltNarrationPrompt =
         /<玩家本回合行动>|【叙述者权限边界】|【当前权威局势】|【输出格式】/.test(combined) ||
         combined.includes('【系统已结算 / 权威局势】') ||
@@ -12618,6 +13066,8 @@ export const useGameStore = defineStore('primordia', () => {
         npcActivityPlan,
         backgroundFlowPlan,
         businessVisitorPlan,
+        frontendMvuScope,
+        frontendMvuSnapshot,
       });
     } finally {
       sendActionInFlight = false;
@@ -12655,7 +13105,10 @@ export const useGameStore = defineStore('primordia', () => {
     const previewPromptWithBusinessAgreementEvents = appendBusinessAgreementEventPromptBlock(scenePrompt, dueBusinessAgreementEvents());
     const previewPromptWithCharacterVisits = appendCharacterVisitPromptBlock(previewPromptWithBusinessAgreementEvents, dueCharacterVisitEvents());
     const result = await previewUnifiedNarrativeRequest(appendDuePromiseMemoBlock(previewPromptWithCharacterVisits, duePromiseMemos()), {
-      authoritativeData: buildAuthoritativeRequestData(combined),
+      authoritativeData: statDataWithFrontendSettlement(
+        buildAuthoritativeRequestData(combined),
+        mergeFrontendMvuScopes(...draftActions.value.map(action => action.frontendMvuScope)),
+      ),
       worldbookScanText: buildWorldbookScanPreview(),
     });
 
@@ -12718,6 +13171,8 @@ export const useGameStore = defineStore('primordia', () => {
         npcActivityPlan,
         backgroundFlowPlan,
         businessVisitorPlan,
+        frontendMvuScope: action.frontendMvuScope,
+        frontendMvuSnapshot: action.frontendMvuSnapshot,
       });
     } else {
       appendPlayerInput(action.inputText ?? action.fact, action.type);

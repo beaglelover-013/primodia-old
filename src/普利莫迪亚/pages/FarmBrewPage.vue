@@ -112,7 +112,10 @@ function tapBrew(barrel: BrewBarrel) {
     return;
   }
   pendingEarlyTapId.value = '';
-  game.appendDraft(`我开启酒窖里的「${barrel.name}」桶，灌装约${bottles}瓶，每瓶可倒${brewPortionsPerBottle}份。当前判断：${quality}。（前端已结算：酒水已入库，酒桶已移除。）`, { type: 'BREW_TAP' });
+  game.appendDraft(`我开启酒窖里的「${barrel.name}」桶，灌装约${bottles}瓶，每瓶可倒${brewPortionsPerBottle}份。当前判断：${quality}。（前端已结算：酒水已入库，酒桶已移除。）`, {
+    type: 'BREW_TAP',
+    frontendMvuScope: result.frontendMvuScope,
+  });
   game.pushLog('提示', `开桶灌装 · ${barrel.name} 已结算并加入行动框。`);
 }
 

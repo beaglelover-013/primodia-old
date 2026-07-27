@@ -113,7 +113,7 @@ function toggleBusinessOpen() {
     open
       ? `我走到「${game.tavernName}」门口，把门口招牌翻到“营业”，推开门，让酒馆正式开始接待客人。`
       : `我走到「${game.tavernName}」门口，把门口招牌翻到“歇业”，收住客流，让酒馆暂时不再接待新客。`,
-    { type: 'BUSINESS_TOGGLE' },
+    { type: 'BUSINESS_TOGGLE', frontendMvuScope: result.frontendMvuScope },
   );
   game.pushLog('提示', `${open ? '开始营业' : '歇业收店'} 已加入行动框。`);
 }

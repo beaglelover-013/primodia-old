@@ -197,7 +197,7 @@ function handleTileClick(it: InventoryItem) {
 }
 
 function moveItemCategory(it: InventoryItem, category: InventoryItem['category']) {
-  game.dispatchAction({
+  void game.executePseudoZeroAction({
     type: 'INVENTORY_MOVE_CATEGORY',
     itemId: it.id,
     category,
