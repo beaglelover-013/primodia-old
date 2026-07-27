@@ -59,7 +59,7 @@ const openings = computed(() => [
     heroine: '莲洵与莲沁',
     race: '兔族',
     time: '解冻月 · 午后',
-    image: 'https://i.postimg.cc/mZ1YBg4j/lian-jia-shuang-zi.png',
+    image: '',
     summary: `兔族双子推开${displayedTavernName.value}的门：姐姐莲洵连珠炮地问吃住，妹妹莲沁安静地站在半步后。`,
   },
   {
@@ -293,7 +293,7 @@ button:focus-visible {
 .opening-title {
   position: absolute;
   left: 326px;
-  top: 76px;
+  top: 86px;
   width: 205px;
   color: #f0d7a1;
   text-align: center;
@@ -309,22 +309,22 @@ button:focus-visible {
 }
 
 .opening-title h1 {
-  margin: 4px 0 0;
+  margin: 2px 0 0;
   font-size: 18px;
 }
 
 .opening-browser {
   position: absolute;
   left: 151px;
-  top: 128px;
+  top: 139px;
   width: 550px;
 }
 
 .opening-intro {
   display: flex;
   align-items: center;
-  gap: 11px;
-  margin-bottom: 13px;
+  gap: 9px;
+  margin-bottom: 8px;
 }
 
 .number-seal {
@@ -356,7 +356,7 @@ button:focus-visible {
 .opening-choice-grid {
   display: grid;
   grid-template-columns: repeat(5, 102px);
-  gap: 8px;
+  gap: 6px;
 }
 
 .opening-choice {
@@ -612,7 +612,6 @@ button:focus-visible {
   position: absolute;
   left: 132px;
   top: 557px;
-  display: grid;
   grid-template-columns: repeat(3, 168px);
   height: 69px;
 }
@@ -692,54 +691,68 @@ button:focus-visible {
 
 @media (max-width: 760px) {
   .opening-stage {
-    width: 390px;
-    height: 760px;
+    width: 276px;
+    height: 660px;
     border-radius: 0;
-    background-position: 31% center;
-    background-size: 1140px 760px;
+    background-position: 38% center;
+    background-size: 990px 660px;
   }
 
   .opening-title {
-    left: 93px;
-    top: 78px;
+    left: 43px;
+    top: 73px;
+    width: 190px;
   }
 
   .opening-browser {
-    left: 35px;
-    top: 136px;
-    width: 320px;
+    left: 18px;
+    top: 128px;
+    width: 240px;
   }
 
   .opening-intro {
-    margin-bottom: 9px;
+    gap: 7px;
+    margin-bottom: 8px;
+  }
+
+  .number-seal {
+    width: 28px;
+    height: 28px;
+    flex-basis: 28px;
+    font-size: 11px;
+  }
+
+  .opening-intro small {
+    font-size: 7px;
   }
 
   .opening-intro h2 {
-    font-size: 15px;
+    font-size: 13px;
+    line-height: 1.35;
   }
 
   .opening-choice-grid {
     display: grid;
-    grid-template-columns: repeat(5, 58px);
-    gap: 7px;
-    width: 320px;
+    grid-template-columns: repeat(2, 116px);
+    gap: 6px;
+    width: 238px;
     padding: 0;
-    overflow: visible;
   }
 
   .opening-choice {
-    grid-template-rows: 66px 34px;
-    width: 58px;
-    height: 100px;
+    grid-template-columns: 48px 1fr;
+    grid-template-rows: none;
+    width: 116px;
+    height: 66px;
   }
 
   .portrait-slot {
-    margin: 3px 3px 0;
+    margin: 4px 0 4px 4px;
   }
 
   .portrait-slot img {
-    width: 50px;
-    height: 62px;
+    width: 42px;
+    height: 56px;
   }
 
   .portrait-placeholder {
@@ -769,27 +782,33 @@ button:focus-visible {
   }
 
   .choice-copy {
-    gap: 0;
-    padding: 2px;
+    align-content: center;
+    gap: 2px;
+    padding: 4px 3px;
+    text-align: left;
   }
 
-  .choice-copy small,
   .choice-copy > span {
     display: none;
   }
 
+  .choice-copy small {
+    display: block;
+    font-size: 7px;
+  }
+
   .choice-copy strong {
-    font-size: 9px;
+    font-size: 11px;
     line-height: 1.25;
   }
 
   .mobile-selected-opening {
     display: grid;
-    grid-template-columns: 128px 1fr;
-    gap: 10px;
-    width: 320px;
-    height: 224px;
-    margin-top: 10px;
+    grid-template-columns: 92px 1fr;
+    gap: 8px;
+    width: 238px;
+    height: 176px;
+    margin-top: 8px;
     padding: 6px;
     overflow: hidden;
     border: 1px solid #9f7039;
@@ -801,8 +820,8 @@ button:focus-visible {
   }
 
   .mobile-feature-image {
-    width: 128px;
-    height: 210px;
+    width: 92px;
+    height: 162px;
     overflow: hidden;
     border: 1px solid #a97a40;
     background: #d8b97c;
@@ -811,8 +830,8 @@ button:focus-visible {
 
   .mobile-feature-image img {
     display: block;
-    width: 126px;
-    height: 208px;
+    width: 90px;
+    height: 160px;
     object-fit: cover;
     object-position: center top;
   }
@@ -820,8 +839,8 @@ button:focus-visible {
   .mobile-solo-image {
     display: grid;
     place-items: center;
-    width: 126px;
-    height: 208px;
+    width: 90px;
+    height: 160px;
     color: #f2dba3;
     background-color: #23412f;
     background-position: center;
@@ -831,7 +850,7 @@ button:focus-visible {
 
   .mobile-feature-copy {
     min-width: 0;
-    padding: 6px 5px 4px;
+    padding: 3px 2px 2px;
     color: #5a351d;
   }
 
@@ -843,8 +862,8 @@ button:focus-visible {
   }
 
   .mobile-feature-copy h3 {
-    margin: 6px 0 2px;
-    font-size: 18px;
+    margin: 4px 0 1px;
+    font-size: 16px;
     line-height: 1.25;
   }
 
@@ -854,7 +873,7 @@ button:focus-visible {
   }
 
   .mobile-feature-copy dl {
-    margin: 10px 0 0;
+    margin: 7px 0 0;
     font-size: 8px;
   }
 
@@ -862,7 +881,7 @@ button:focus-visible {
     display: flex;
     justify-content: space-between;
     gap: 6px;
-    padding: 4px 0;
+    padding: 3px 0;
     border-bottom: 1px solid rgba(151, 102, 49, 0.22);
   }
 
@@ -878,13 +897,13 @@ button:focus-visible {
 
   .mobile-feature-copy p {
     display: -webkit-box;
-    margin: 9px 0 0;
+    margin: 6px 0 0;
     overflow: hidden;
     color: #76563a;
     font-size: 8px;
     line-height: 1.6;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 4;
+    -webkit-line-clamp: 3;
   }
 
   .opening-detail {
@@ -892,9 +911,9 @@ button:focus-visible {
   }
 
   .opening-status {
-    left: 42px;
-    top: 535px;
-    width: 306px;
+    left: 20px;
+    top: 548px;
+    width: 236px;
     height: 24px;
     overflow: hidden;
     color: #f0d9a3;
@@ -908,11 +927,11 @@ button:focus-visible {
   }
 
   .confirm-button {
-    left: 46px;
-    top: 635px;
-    width: 298px;
-    height: 66px;
-    font-size: 15px;
+    left: 29px;
+    top: 565px;
+    width: 218px;
+    height: 56px;
+    font-size: 14px;
   }
 
   .mobile-button-skin {
@@ -920,9 +939,9 @@ button:focus-visible {
     inset: 0;
     z-index: -1;
     display: block;
-    background-position: -192px -297px;
+    background-position: -194px -300px;
     background-repeat: no-repeat;
-    background-size: 683px 455px;
+    background-size: 705px 470px;
   }
 }
 

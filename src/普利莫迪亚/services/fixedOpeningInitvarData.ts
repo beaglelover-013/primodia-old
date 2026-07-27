@@ -8,6 +8,68 @@ function clonePlainData<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+function setStoredItemQty(store: Record<string, any>, category: string, itemName: string, qty: number, remaining?: number) {
+  const item = store?.['库房']?.[category]?.[itemName];
+  if (!item) return;
+  item['数量'] = qty;
+  if (typeof remaining === 'number') item['当前剩余份数'] = remaining;
+}
+
+function deleteStoredItem(store: Record<string, any>, category: string, itemName: string) {
+  delete store?.['库房']?.[category]?.[itemName];
+}
+
+function reduceOpeningEconomy(store: Record<string, any>) {
+  const money = store?.['酒馆']?.['资金'];
+  if (money) {
+    Object.assign(money['随身钱袋'], {
+      铜币: 180,
+      折算合计铜币: 180,
+    });
+    Object.assign(money['钱匣'], {
+      铜币: 1320,
+      折算合计铜币: 1320,
+    });
+    Object.assign(money, {
+      铜币: 1500,
+      折算合计铜币: 1500,
+    });
+  }
+
+  setStoredItemQty(store, '食材', '小麦粉', 1, 8);
+  setStoredItemQty(store, '食材', '黑面包', 2);
+  setStoredItemQty(store, '食材', '鸡蛋', 8);
+  setStoredItemQty(store, '食材', '牛奶', 1, 4);
+  deleteStoredItem(store, '食材', '黄油');
+  setStoredItemQty(store, '食材', '土豆', 6);
+  setStoredItemQty(store, '食材', '洋葱', 4);
+  setStoredItemQty(store, '食材', '胡萝卜', 5);
+  setStoredItemQty(store, '食材', '卷心菜', 1);
+  deleteStoredItem(store, '食材', '牛肉');
+  setStoredItemQty(store, '食材', '猪肉', 1, 3);
+  setStoredItemQty(store, '食材', '鸡肉', 1, 3);
+  setStoredItemQty(store, '食材', '河鱼', 2);
+  setStoredItemQty(store, '食材', '干豆', 1, 8);
+
+  setStoredItemQty(store, '调料', '盐', 1, 20);
+  deleteStoredItem(store, '调料', '黑胡椒');
+  setStoredItemQty(store, '调料', '干香草', 1, 6);
+  setStoredItemQty(store, '调料', '蒜', 2);
+  deleteStoredItem(store, '调料', '蜂蜜');
+
+  setStoredItemQty(store, '酒水', '麦酒', 1, 12);
+  deleteStoredItem(store, '酒水', '苹果酒');
+  deleteStoredItem(store, '酒水', '蜂蜜酒');
+
+  setStoredItemQty(store, '杂物', '蜡烛', 6);
+  setStoredItemQty(store, '杂物', '木柴', 1, 14);
+  setStoredItemQty(store, '杂物', '灯油', 1, 8);
+  setStoredItemQty(store, '日用品', '肥皂', 1);
+  setStoredItemQty(store, '日用品', '抹布', 4);
+  setStoredItemQty(store, '日用品', '陶碗', 12);
+  setStoredItemQty(store, '日用品', '锡酒杯', 8);
+}
+
 function parseFixedOpeningSections() {
   const versionRe = new RegExp('^\\u7248\\u672c[\\u4e00\\u4e8c\\u4e09\\u56db]\\uff1a.*$', 'gm');
   const markers = [...FIXED_OPENING_INITVAR_SOURCE.matchAll(versionRe)].map(match => ({
@@ -32,6 +94,7 @@ function parseFixedOpeningSections() {
 
 const FIXED_OPENING_INITVARS = (() => {
   const [fox, sheepPatch, deerPatch, twinsPatch] = parseFixedOpeningSections();
+  reduceOpeningEconomy(fox);
   const relationshipKey = '\u4eba\u7269\u7f81\u7eca';
   const withCharacterPatch = (patch: Record<string, any>, time: string) => {
     const next = clonePlainData(fox);

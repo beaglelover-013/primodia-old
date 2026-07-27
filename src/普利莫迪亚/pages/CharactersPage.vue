@@ -69,7 +69,6 @@ function presetCg(urls: string[], note: string): PresetCgSlot[] {
   }));
 }
 
-const TWIN_OPENING_CG = 'https://i.postimg.cc/mZ1YBg4j/lian-jia-shuang-zi.png';
 const PRESET_CHARACTER_CG: Record<string, Partial<Record<'sfw' | 'nsfw', PresetCgSlot[]>>> = {
   橘柒: {
     sfw: presetCg(
@@ -77,22 +76,12 @@ const PRESET_CHARACTER_CG: Record<string, Partial<Record<'sfw' | 'nsfw', PresetC
         'https://files.catbox.moe/0ld4p2.png',
         'https://files.catbox.moe/21zsbn.png',
         'https://files.catbox.moe/ckq34r.png',
-        'https://i.postimg.cc/90PYdcck/Comfy-UI-00153.png',
-        'https://i.postimg.cc/x8G3v997/Comfy-UI-00252.png',
-        'https://i.postimg.cc/Hn09wTpm/Comfy-UI-00254.png',
-        'https://i.postimg.cc/598gdS80/Comfy-UI-00359.png',
       ],
       '橘柒预设 CG。',
     ),
     nsfw: presetCg(
       [
         'https://files.catbox.moe/3gz9ht.png',
-        'https://i.postimg.cc/9FMhN0qs/ju-qins02.png',
-        'https://i.postimg.cc/Kvz2sjMF/ju-qins03.png',
-        'https://i.postimg.cc/Qxt3nCTX/ju-qins04.png',
-        'https://i.postimg.cc/9f3HMBNR/ju-qins05.png',
-        'https://i.postimg.cc/hv81LKKZ/Comfy-UI-00121.png',
-        'https://i.postimg.cc/Hn09wTTR/Comfy-UI-00194.png',
       ],
       '橘柒 NSFW CG。',
     ),
@@ -102,12 +91,10 @@ const PRESET_CHARACTER_CG: Record<string, Partial<Record<'sfw' | 'nsfw', PresetC
       [
         'https://files.catbox.moe/j42erz.png',
         'https://files.catbox.moe/re3z5a.png',
-        'https://i.postimg.cc/PxTGb5jR/mian-nuann03.png',
-        'https://i.postimg.cc/DZnVQwhK/mian-nuann04.png',
       ],
       '绵暖预设 CG。',
     ),
-    nsfw: presetCg(['https://i.postimg.cc/Z5QpyWrd/Comfy-UI-00839.png'], '绵暖 NSFW CG。'),
+    nsfw: presetCg([], '绵暖 NSFW CG。'),
   },
   翠萱: {
     sfw: presetCg(['https://files.catbox.moe/t2r08i.png'], '翠萱预设 CG。'),
@@ -115,13 +102,6 @@ const PRESET_CHARACTER_CG: Record<string, Partial<Record<'sfw' | 'nsfw', PresetC
   莲洵: {
     sfw: presetCg(
       [
-        TWIN_OPENING_CG,
-        'https://i.postimg.cc/9XShKVtF/Comfy-UI-01186.png',
-        'https://i.postimg.cc/NGVcSY7Q/Comfy-UI-01188.png',
-        'https://i.postimg.cc/tJ1HJmyZ/Comfy-UI-01192.png',
-        'https://i.postimg.cc/m2HsGq8p/Comfy-UI-01193.png',
-        'https://i.postimg.cc/cLGN1mzJ/Comfy-UI-01194.png',
-        'https://i.postimg.cc/cJsywJZj/Comfy-UI-01196.png',
       ],
       '莲洵预设 CG。',
     ),
@@ -133,11 +113,6 @@ const PRESET_CHARACTER_CG: Record<string, Partial<Record<'sfw' | 'nsfw', PresetC
   莲沁: {
     sfw: presetCg(
       [
-        TWIN_OPENING_CG,
-        'https://i.postimg.cc/j2GY7QdF/Comfy-UI-01173.png',
-        'https://i.postimg.cc/rpQ6JLwM/Comfy-UI-01198.png',
-        'https://i.postimg.cc/XJzTRc5D/Comfy-UI-01201.png',
-        'https://i.postimg.cc/fk41LzBB/Comfy-UI-01202.png',
       ],
       '莲沁预设 CG。',
     ),
@@ -149,11 +124,6 @@ const PRESET_CHARACTER_CG: Record<string, Partial<Record<'sfw' | 'nsfw', PresetC
   阿黛拉: {
     sfw: presetCg(
       [
-        'https://i.postimg.cc/pLmnxP33/Comfy-UI-00886.png',
-        'https://i.postimg.cc/pLmnxP3w/Comfy-UI-00890.png',
-        'https://i.postimg.cc/CxRfYw9W/Comfy-UI-00895.png',
-        'https://i.postimg.cc/138NPyLx/Comfy-UI-00896.png',
-        'https://i.postimg.cc/L8JZRmr4/Comfy-UI-00899.png',
       ],
       '阿黛拉预设 CG。',
     ),

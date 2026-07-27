@@ -79,7 +79,7 @@ const emit = defineEmits<{
 .title-copy {
   position: absolute;
   left: 204px;
-  top: 142px;
+  top: 164px;
   width: 672px;
   text-align: center;
   text-shadow:
@@ -100,7 +100,7 @@ const emit = defineEmits<{
   align-items: center;
   justify-content: center;
   gap: 12px;
-  margin: 14px 0 11px;
+  margin: 10px 0 8px;
   color: #f1c86f;
 }
 
@@ -127,7 +127,7 @@ const emit = defineEmits<{
 }
 
 .title-copy h2 {
-  margin: 12px 0 0;
+  margin: 9px 0 0;
   color: #f1c86f;
   font-size: 28px;
   line-height: 1;
@@ -136,7 +136,7 @@ const emit = defineEmits<{
 }
 
 .title-copy p {
-  margin: 28px 0 0;
+  margin: 23px 0 0;
   color: #d0c29d;
   font-size: 13px;
   letter-spacing: 0.08em;
@@ -238,39 +238,61 @@ footer {
   }
 
   .illustrated-title {
-    width: 390px;
-    height: 760px;
+    width: 276px;
+    height: 640px;
     border-radius: 0;
-    background-size: 1140px 760px;
+    background-position: 50% center;
+    background-size: 960px 640px;
   }
 
   .title-copy {
-    left: 24px;
-    top: 176px;
-    width: 342px;
+    left: 18px;
+    top: 172px;
+    width: 240px;
+  }
+
+  .maker {
+    font-size: 8px;
+    letter-spacing: 0.18em;
+  }
+
+  .ornament {
+    gap: 8px;
+    margin: 8px 0 7px;
+  }
+
+  .ornament span {
+    width: 42px;
   }
 
   .title-copy h1 {
-    font-size: 42px;
+    font-size: 34px;
   }
 
   .title-copy h2 {
-    font-size: 22px;
+    margin-top: 8px;
+    font-size: 18px;
+  }
+
+  .title-copy p {
+    margin-top: 22px;
+    font-size: 10px;
   }
 
   .start-button {
-    left: 38px;
-    top: 505px;
-    width: 314px;
-    height: 96px;
+    left: 31px;
+    top: 465px;
+    width: 214px;
+    height: 66px;
   }
 
   .start-button span {
-    font-size: 21px;
+    font-size: 18px;
   }
 
   .start-button small {
-    width: 270px;
+    width: 176px;
+    font-size: 8px;
   }
 
   footer {

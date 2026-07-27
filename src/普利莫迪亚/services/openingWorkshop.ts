@@ -2219,8 +2219,8 @@ export function buildSoloCookOpeningPreset(worldbookName = ''): {
   const preset = buildFixedOpeningPreset(worldbookName);
   const { draft, bundle } = preset;
   draft.tavern.story = '克斯在解冻月清晨独自醒来，没有任何女主或陌生来客登场。他只想把铁壶酒馆收拾起来，靠做饭赚钱。';
-  draft.tavern.funds = '6金币';
-  draft.tavern.stock = '蔬菜和肉稍多';
+  draft.tavern.funds = '1500铜币';
+  draft.tavern.stock = '少量基础食材';
   draft.theme = '单人开局';
 
   bundle.characterProfile.profile =
@@ -2233,29 +2233,19 @@ export function buildSoloCookOpeningPreset(worldbookName = ''): {
   bundle.story.options = ['开始备菜，准备今天营业'];
   bundle.story.sum = '解冻月清晨，克斯从睡梦中醒来，迎接铁壶酒馆的新一天。';
 
-  const initvar = bundle.story.initvar as Record<string, any>;
+  const initvar = fixedOpeningInitvar('fox');
   initvar.世界.当前历法.天气 = '解冻月清晨，薄雾湿冷，泥路半干，屋檐仍在滴水';
   initvar.世界.当前历法.时间 = '06:20';
-  initvar.酒馆.资金 = {
-    随身钱袋: openingMoneyBucket(6000),
-    钱匣: openingMoneyBucket(0),
-  };
   initvar.酒馆.今日营业状态 = '准备营业';
   initvar.酒馆.整体概况 =
     '铁壶酒馆冷清但可用。这个开局没有女主相遇，也没有陌生来访者登场；第一天从克斯独自醒来、生火、备菜、盘算靠做饭赚钱开始。';
   initvar.主角.当前状态 = '清晨刚醒，正在厨房生火备菜，目标是做饭赚钱';
   initvar.世界.当前地点.具体位置 = '铁壶酒馆·厨房餐食区';
-  initvar.库房.食材 = {
-    ...initvar.库房.食材,
-    新鲜土豆: { 数量: 10, 标签: ['蔬菜', '根茎', '饱腹'], 价格折合铜币: 1 },
-    春萝卜: { 数量: 8, 标签: ['蔬菜', '清甜', '水润'], 价格折合铜币: 1 },
-    卷心菜: { 数量: 5, 标签: ['蔬菜', '耐储', '清脆'], 价格折合铜币: 3 },
-    风干咸肉: { 数量: 4, 标签: ['肉类', '耐储', '咸香'], 价格折合铜币: 20 },
-    熏羊肉: { 数量: 2, 标签: ['肉类', '烟熏', '厚鲜'], 价格折合铜币: 25 },
-  };
   initvar.人物羁绊 = {};
   initvar.农田与酒窖 = initvar.农田与酒窖 ?? { 农田: {}, 酒窖桶: {} };
   initvar.街坊商铺 = { 当前商铺: '' };
+  bundle.story.initvar = initvar;
+  bundle.story.initvarYaml = stringifyYaml(initvar).trim();
 
   return preset;
 }
