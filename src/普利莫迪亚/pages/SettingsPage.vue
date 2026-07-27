@@ -1092,12 +1092,6 @@ async function importSaveFile(event: Event) {
           <button class="pm-btn sm" @click="game.dispatchAction({ type: 'DEBUG_STAT', stat: 'energy_full', reason: '调试 · 精力满' })">
             <PmIcon name="check" :size="12" /> 精力满
           </button>
-          <button class="pm-btn sm" @click="game.dispatchAction({ type: 'DEBUG_STAT', stat: 'reputation_delta', value: 500, reason: '调试 · 声望 +500' })">
-            <PmIcon name="heart" :size="12" /> 声望 +500
-          </button>
-          <button class="pm-btn sm" @click="game.pushLog('叙事', '手动记录 · 普通访客抵达')">
-            <PmIcon name="scroll" :size="12" /> 写入引擎记录
-          </button>
         </div>
       </section>
       <section v-show="activeSettingsSection === 'debug'" class="settings-card pm-card prompt-debug-card final-prompt-card">

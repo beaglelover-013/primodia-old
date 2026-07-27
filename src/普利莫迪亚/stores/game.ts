@@ -8482,6 +8482,7 @@ export const useGameStore = defineStore('primordia', () => {
     moneyAccountRef(account).value = Math.max(0, moneyAccountRef(account).value + delta);
     markLocalStateDirty();
     void writeChatSave();
+    void writeDebugMoneyToCurrentMvu(account);
     pushLog(delta >= 0 ? '奖励' : '扣减', `${action.reason} · ${moneyAccountLabel(account)} ${delta >= 0 ? '+' : '-'}${formatCopper(Math.abs(delta))}`);
     return {
       ok: true,
@@ -8502,6 +8503,7 @@ export const useGameStore = defineStore('primordia', () => {
     if (action.stat === 'reputation_delta') reputation.value = clampReputation(reputation.value + Math.floor(action.value ?? 0));
     markLocalStateDirty();
     void writeChatSave();
+    if (action.stat === 'energy_full') void writeDebugEnergyToCurrentMvu();
     pushLog('系统', action.reason);
     return {
       ok: true,
@@ -8511,6 +8513,57 @@ export const useGameStore = defineStore('primordia', () => {
       narrativeFact: `调试调整状态: ${action.reason}。`,
       aiHint: '无需生成正文。',
     };
+  }
+
+  async function writeDebugMoneyToCurrentMvu(account: MoneyAccount) {
+    const statData = readMessageStatData();
+    if (!statData) {
+      pushLog('提示', '没有读到当前楼层变量，调试资金只修改了前端显示。', { source: 'engine', authoritative: true, tone: 'amber' });
+      return;
+    }
+    const nextData = clonePlainData(statData);
+    const writeMoneyBucket = (name: '随身钱袋' | '钱匣', copper: number) => {
+      const safeCopper = normalizeCopperValue(copper);
+      const parts = copperToParts(safeCopper);
+      setPlainPath(nextData, `酒馆.资金.${name}`, {
+        铜币: parts.copper,
+        银币: parts.silver,
+        金币: parts.gold,
+        铂金币: parts.platinum,
+        秘银币: parts.mithril,
+        折算合计铜币: safeCopper,
+      });
+    };
+    writeMoneyBucket('随身钱袋', walletCopper.value);
+    writeMoneyBucket('钱匣', cashboxCopper.value);
+    setPlainPath(nextData, '酒馆.资金.折算合计铜币', normalizeCopperValue(walletCopper.value + cashboxCopper.value));
+    const wrote = await writeCurrentMessageStatData(nextData);
+    if (wrote) {
+      applyMvuStatData(nextData);
+      pushLog('系统', `调试资金已写入当前楼层变量 · ${moneyAccountLabel(account)}`, { source: 'engine', authoritative: true, tone: 'green' });
+    } else {
+      pushLog('提示', '调试资金写入当前楼层变量失败。', { source: 'engine', authoritative: true, tone: 'amber' });
+    }
+  }
+
+  async function writeDebugEnergyToCurrentMvu() {
+    const statData = readMessageStatData();
+    if (!statData) {
+      pushLog('提示', '没有读到当前楼层变量，精力满只修改了前端显示。', { source: 'engine', authoritative: true, tone: 'amber' });
+      return;
+    }
+    const nextData = clonePlainData(statData);
+    setPlainPath(nextData, '主角.精力', {
+      当前值: Math.max(0, Math.floor(energy.value)),
+      上限: Math.max(1, Math.floor(energy.max)),
+    });
+    const wrote = await writeCurrentMessageStatData(nextData);
+    if (wrote) {
+      applyMvuStatData(nextData);
+      pushLog('系统', '主角精力已写入当前楼层变量。', { source: 'engine', authoritative: true, tone: 'green' });
+    } else {
+      pushLog('提示', '主角精力写入当前楼层变量失败。', { source: 'engine', authoritative: true, tone: 'amber' });
+    }
   }
 
   function buildCurrentScenePrompt(actionText: string) {
