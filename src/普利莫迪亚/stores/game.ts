@@ -6752,27 +6752,18 @@ export const useGameStore = defineStore('primordia', () => {
         stored.name === item.name &&
         stored.category === category &&
         sameTagSet(stored.tags, tags) &&
+        portionsPerUnitForItem(stored) === portionsPerUnit &&
         String(stored.batch ?? '') === String('batch' in item ? item.batch ?? '' : ''),
     );
     const qty = Math.max(0, Math.floor(Number(item.qty) || 0));
-    if (qty <= 0) return undefined;
+    if (qty <= 0) return;
     if (existed) {
-      const previousPortionsPerUnit = portionsPerUnitForItem(existed);
-      const previousRemainingPortions = remainingPortionsForItem(existed);
       existed.qty += qty;
-      existed.portionsPerUnit = portionsPerUnit;
-      existed.remainingPortions =
-        previousPortionsPerUnit === portionsPerUnit
-          ? Math.max(0, Math.min(portionsPerUnit, previousRemainingPortions))
-          : portionsPerUnit;
-      existed.tags = tags;
-      if (item.desc) existed.desc = item.desc;
-      if (Number(item.priceCopper) >= 0) existed.priceCopper = Math.max(0, Math.floor(Number(item.priceCopper) || 0));
-      if ('unit' in item) existed.unit = item.unit;
-      if ('portionUnit' in item) existed.portionUnit = item.portionUnit;
-      return existed;
+      if (!existed.desc && item.desc) existed.desc = item.desc;
+      if (!existed.priceCopper && item.priceCopper) existed.priceCopper = item.priceCopper;
+      return;
     }
-    const nextItem: InventoryItem = {
+    collection.push({
       id: 'id' in item && item.id ? item.id : `i-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       name: item.name,
       category,
@@ -6788,9 +6779,7 @@ export const useGameStore = defineStore('primordia', () => {
       priceCopper: item.priceCopper,
       ...('quality' in item && item.quality ? { quality: item.quality } : {}),
       ...('recipeSource' in item && item.recipeSource ? { recipeSource: clonePlain(item.recipeSource) } : {}),
-    };
-    collection.push(nextItem);
-    return nextItem;
+    });
   }
 
   function itemSourceLabel(source: InventorySource) {
@@ -7025,7 +7014,7 @@ export const useGameStore = defineStore('primordia', () => {
   function addSatchelFromAction(item: BuyActionItem) {
     const category = normalizeInventoryCategory(item.category);
     const tags = normalizeActionTags(item, category);
-    return addItemToCollection(satchel.value, { ...item, category, tags });
+    addItemToCollection(satchel.value, { ...item, category, tags });
   }
 
   function moveInventoryItemBetweenCollections(from: InventoryItem[], to: InventoryItem[], itemId: string, qty?: number) {
@@ -7663,15 +7652,7 @@ export const useGameStore = defineStore('primordia', () => {
     const summary = items.map(item => `${item.name}×${item.qty}`).join('、');
     walletCopper.value = Math.max(0, walletCopper.value - total);
     items.forEach(item => {
-      const stored = addSatchelFromAction(item);
-      if (stored) {
-        stored.portionsPerUnit = item.portionsPerUnit;
-        stored.remainingPortions =
-          remainingPortionsForItem(stored) > 0
-            ? Math.min(item.portionsPerUnit, remainingPortionsForItem(stored))
-            : item.portionsPerUnit;
-        stored.priceCopper = item.priceCopper;
-      }
+      addSatchelFromAction(item);
       const nextStock = Math.max(0, item.stock - item.qty);
       stockDeltas[item.id] = nextStock;
       const generatedProduct = generatedShopProducts.value.find(product => product.id === item.id);
@@ -8403,7 +8384,7 @@ export const useGameStore = defineStore('primordia', () => {
         '货架:',
         '- 商品名 | 分类 | 整件价格 | 余数量 | 每件份数: 8 | 标签: 标签1、标签2 | 描述: 一句话商品描述',
         '</shop>',
-        '分类只能写: 食材、调料、酒水、成品、杂物。整件价格例: 76铜、1银20铜。可分割食材必须填写每件份数；鸡蛋等不可分割物品填写1。',
+        '分类只能写: 食材、调料、酒水、成品、杂物、日用品。整件价格例: 76铜、1银20铜。可分割食材必须填写每件份数；鸡蛋等不可分割物品填写1。',
       ].join('\n'),
     };
   }
@@ -11623,21 +11604,16 @@ export const useGameStore = defineStore('primordia', () => {
       for (const [name, raw] of Object.entries(record)) {
         const parsed = inventoryItemFromRecord(name, raw, category, `${category}-${name}-${nextInventory.length}`);
         if (!parsed) continue;
-        const existingItem = previous.find(
+        const existingRecipeSource = previous.find(
           existing =>
             existing.name === name &&
             existing.category === category &&
-            sameTagSet(existing.tags, parsed.tags),
-        );
+            sameTagSet(existing.tags, parsed.tags) &&
+            existing.recipeSource,
+        )?.recipeSource;
         nextInventory.push({
           ...parsed,
-          ...(existingItem?.id ? { id: existingItem.id } : {}),
-          ...(parsed.unit || !existingItem?.unit ? {} : { unit: existingItem.unit }),
-          ...(parsed.portionUnit || !existingItem?.portionUnit ? {} : { portionUnit: existingItem.portionUnit }),
-          ...(parsed.batch || !existingItem?.batch ? {} : { batch: existingItem.batch }),
-          ...(parsed.baseName || !existingItem?.baseName ? {} : { baseName: existingItem.baseName }),
-          ...(parsed.desc || !existingItem?.desc ? {} : { desc: existingItem.desc }),
-          ...(existingItem?.recipeSource ? { recipeSource: clonePlain(existingItem.recipeSource) } : {}),
+          ...(existingRecipeSource ? { recipeSource: clonePlain(existingRecipeSource) } : {}),
         });
       }
     }
@@ -11968,12 +11944,9 @@ export const useGameStore = defineStore('primordia', () => {
       标签: clonePlain(item.tags ?? []),
       价格折合铜币: Math.max(0, Math.floor(Number(item.priceCopper) || 0)),
     };
-    if (item.unit) record.单位 = item.unit;
-    if (item.portionUnit) record.份数单位 = item.portionUnit;
-    if (item.batch) record.批次 = item.batch;
-    if (item.baseName) record.基础名称 = item.baseName;
-    if (item.quality) record.搭配判定 = item.quality;
-    if (item.desc) record.备注 = item.desc;
+    if (item.category === '成品' || item.category === '酒水') {
+      record.搭配判定 = item.quality ?? '无冲突';
+    }
     return record;
   }
 

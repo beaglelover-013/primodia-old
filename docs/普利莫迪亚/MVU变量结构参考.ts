@@ -54,6 +54,7 @@ const InventoryBucket = z.object({
   成品: z.record(z.string().describe('成品名'), CookedItem).prefault({}),
   酒水: z.record(z.string().describe('酒水名'), CookedItem).prefault({}),
   杂物: z.record(z.string().describe('杂物名'), StorageItem).prefault({}),
+  日用品: z.record(z.string().describe('日用品名'), StorageItem).prefault({}),
 });
 
 const TemporaryState = z.object({
@@ -148,7 +149,7 @@ export const Schema = z.object({
     杂物: z.record(z.string().describe('杂物名'), StorageItem).prefault({}),
     日用品: z.record(z.string().describe('日用品名'), StorageItem).prefault({}),
   }),
-  行囊: InventoryBucket.prefault({ 食材: {}, 调料: {}, 成品: {}, 酒水: {}, 杂物: {} }),
+  行囊: InventoryBucket.prefault({ 食材: {}, 调料: {}, 成品: {}, 酒水: {}, 杂物: {}, 日用品: {} }),
   临时状态: z.object({
     主角: z.array(TemporaryState).prefault([]),
     酒馆: z.array(TemporaryState).prefault([]),

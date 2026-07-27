@@ -644,11 +644,12 @@ function readJsonNumber(value: unknown, fallback = 0): number {
 
 function normalizeShopCategory(raw: unknown): string {
   const category = readJsonString(raw) || '杂物';
-  if (['食材', '调料', '酒水', '成品', '杂物'].includes(category)) return category;
+  if (['食材', '调料', '酒水', '成品', '杂物', '日用品'].includes(category)) return category;
   if (/菜品|成品|熟食|餐|料理|药剂|药水/.test(category)) return '成品';
   if (/酒|饮|茶|水/.test(category)) return '酒水';
   if (/盐|糖|酱|香料|调味|油|醋|蜜/.test(category)) return '调料';
   if (/菜|肉|鱼|蛋|奶|粮|粉|果|食/.test(category)) return '食材';
+  if (/日用|清洁|洗漱|餐具|酒具|厨具|容器|木桶|玻璃罐|陶碗|杯|抹布|肥皂/.test(category)) return '日用品';
   return '杂物';
 }
 
