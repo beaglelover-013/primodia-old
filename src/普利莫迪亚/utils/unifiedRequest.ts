@@ -22,10 +22,11 @@ import {
 } from '../services/turnContextWorldbook';
 import {
   getPrimordiaMvuData,
+  isSubstantialPrimordiaStatData,
+  primordiaStatDataWeight,
   readPrimordiaStatDataFromOptions,
   unwrapPrimordiaStatData,
   wrapPrimordiaMvuData,
-  writePrimordiaStatData,
 } from '../services/mvuDataBridge';
 
 export interface UnifiedRequestCallbacks {
@@ -646,20 +647,6 @@ async function readBaseMvuData(): Promise<Record<string, any>> {
   return {};
 }
 
-async function writeMessageStatData(statData: Record<string, any>, messageId?: number): Promise<boolean> {
-  if (typeof messageId !== 'number' || !Number.isFinite(messageId)) {
-    console.warn('[primordia] 拒绝写入变量：缺少明确的 assistant 楼层 ID。');
-    return false;
-  }
-  const target = { type: 'message', message_id: messageId };
-  try {
-    return await writePrimordiaStatData(cloneData(statData), target);
-  } catch (error) {
-    console.warn('[primordia] 写入 assistant stat_data 失败:', error);
-  }
-  return false;
-}
-
 function normalizeAssistantMessage(raw: string): {
   message: string;
   mvuMessage: string;
@@ -944,6 +931,21 @@ function guardGeneratedCoreStats(parsedData: Record<string, any>, baseData: Reco
   guardGeneratedGauge(next, baseData, message, { topLevel: '主角', gauge: '精力', maxDrop: 35 });
   guardGeneratedGauge(next, baseData, message, { topLevel: '主角', gauge: '生命', maxDrop: 45 });
   return next;
+}
+
+function repairSparseGeneratedData(
+  generatedData: Record<string, any>,
+  authoritativeData: Record<string, any> | undefined,
+  options: Parameters<typeof mergeAuthoritativeData>[2],
+) {
+  if (!authoritativeData || !isSubstantialPrimordiaStatData(authoritativeData)) return generatedData;
+  if (isSubstantialPrimordiaStatData(generatedData)) return generatedData;
+  console.warn('[primordia] MVU 解析结果疑似残缺，已用上一楼完整变量兜底:', {
+    generatedWeight: primordiaStatDataWeight(generatedData),
+    authoritativeWeight: primordiaStatDataWeight(authoritativeData),
+    generatedKeys: Object.keys(generatedData ?? {}),
+  });
+  return mergeAuthoritativeData(generatedData, authoritativeData, options);
 }
 
 function mergeData(target: Record<string, any>, source: Record<string, any>): Record<string, any> {
@@ -1497,20 +1499,22 @@ export async function runUnifiedNarrativeRequest(
       (!sameJsonValue(userMessageData?.主角?.精力, parsedFinalData?.主角?.精力) ||
         !sameJsonValue(userMessageData?.主角?.生命, parsedFinalData?.主角?.生命) ||
         !sameJsonValue(userMessageData?.主角?.hp, parsedFinalData?.主角?.hp));
-    const finalData = callbacks.authoritativeData
-      ? mergeAuthoritativeData(parsedFinalData, callbacks.authoritativeData, {
-          preserveNarrativeScene: shouldPreserveNarrativeScene,
-          preserveNarrativeTime: hasTimePatch,
-          preserveNarrativeTavern: hasTavernPatch,
-          preserveNarrativeRelationships: hasRelationshipPatch,
-          preserveNarrativeFarmBrew: hasFarmBrewPatch,
-          preserveNarrativeStreetShop: hasStreetShopPatch,
-          preserveNarrativeProtagonist: hasProtagonistPatch,
-          keepGeneratedInventory: generatedInventoryChanged,
-          keepGeneratedFarmBrew: generatedFarmBrewChanged,
-          keepGeneratedProtagonistStats: generatedProtagonistStatsChanged,
-        })
+    const mergeOptions = {
+      preserveNarrativeScene: shouldPreserveNarrativeScene,
+      preserveNarrativeTime: hasTimePatch,
+      preserveNarrativeTavern: hasTavernPatch,
+      preserveNarrativeRelationships: hasRelationshipPatch,
+      preserveNarrativeFarmBrew: hasFarmBrewPatch,
+      preserveNarrativeStreetShop: hasStreetShopPatch,
+      preserveNarrativeProtagonist: hasProtagonistPatch,
+      keepGeneratedInventory: generatedInventoryChanged,
+      keepGeneratedFarmBrew: generatedFarmBrewChanged,
+      keepGeneratedProtagonistStats: generatedProtagonistStatsChanged,
+    };
+    const mergedFinalData = callbacks.authoritativeData
+      ? mergeAuthoritativeData(parsedFinalData, callbacks.authoritativeData, mergeOptions)
       : parsedFinalData;
+    const finalData = repairSparseGeneratedData(mergedFinalData, callbacks.authoritativeData, mergeOptions);
 
     rememberPromptDebug({
       id: debugId,
@@ -1533,13 +1537,10 @@ export async function runUnifiedNarrativeRequest(
       normalizedMessage: message,
     });
 
-    const activeSwipeData = buildActiveSwipeData(assistantId, finalData);
     await setChatMessages(
       [
         {
           message_id: assistantId,
-          data: wrapPrimordiaMvuData(finalData),
-          ...(activeSwipeData ? { swipes_data: activeSwipeData } : {}),
           extra: {
             ...(nativeTurn.assistantMessage.extra ?? {}),
             primordia: {
@@ -1556,11 +1557,6 @@ export async function runUnifiedNarrativeRequest(
 
     latest.messageId = assistantId;
     if (typeof userMessageId === 'number') latest.userMessageId = userMessageId;
-
-    const wroteVariables = await writeMessageStatData(finalData, assistantId);
-    if (!wroteVariables) {
-      throw new Error(`AI 已生成楼层 #${assistantId}，但变量没有成功写回该楼层。`);
-    }
 
     emitStoryUpdated(latest);
     return {

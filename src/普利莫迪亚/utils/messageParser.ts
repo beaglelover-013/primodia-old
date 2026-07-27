@@ -221,7 +221,18 @@ function uniqueMessagesById(messages: any[]): any[] {
   const seen = new Map<number, any>();
   for (const message of messages) {
     if (!message || typeof message.message_id !== 'number') continue;
-    if (!seen.has(message.message_id)) seen.set(message.message_id, message);
+    const existing = seen.get(message.message_id);
+    if (!existing) {
+      seen.set(message.message_id, message);
+      continue;
+    }
+    const currentText = String(message?.message ?? '');
+    const existingText = String(existing?.message ?? '');
+    const currentHasMarkup = hasExplicitStoryMarkup(currentText) || /<(?:shop|craft_result|guest_update|regular_guest_update|rumor_record|promise_update|tavern_state_update|business_agreement_update|character_behavior_update|UpdateVariable|JSONPatch)\b/i.test(currentText);
+    const existingHasMarkup = hasExplicitStoryMarkup(existingText) || /<(?:shop|craft_result|guest_update|regular_guest_update|rumor_record|promise_update|tavern_state_update|business_agreement_update|character_behavior_update|UpdateVariable|JSONPatch)\b/i.test(existingText);
+    if ((currentHasMarkup && !existingHasMarkup) || currentText.length > existingText.length) {
+      seen.set(message.message_id, message);
+    }
   }
   return [...seen.values()].sort((a, b) => a.message_id - b.message_id);
 }
@@ -450,19 +461,34 @@ function readShopField(shopText: string, field: string): string {
 }
 
 function cleanShopJsonText(shopText: string): string {
-  const cleaned = shopText
-    .replace(/^```(?:json)?/i, '')
-    .replace(/```$/i, '')
-    .trim();
-  const firstObject = cleaned.indexOf('{');
-  const lastObject = cleaned.lastIndexOf('}');
-  const firstArray = cleaned.indexOf('[');
-  const lastArray = cleaned.lastIndexOf(']');
-  if (firstObject >= 0 && lastObject > firstObject && (firstArray < 0 || firstObject < firstArray)) {
-    return cleaned.slice(firstObject, lastObject + 1).trim();
+  const trimJson = (value: string) => {
+    const cleaned = value
+      .replace(/^```(?:json)?/i, '')
+      .replace(/```$/i, '')
+      .trim();
+    const firstObject = cleaned.indexOf('{');
+    const lastObject = cleaned.lastIndexOf('}');
+    const firstArray = cleaned.indexOf('[');
+    const lastArray = cleaned.lastIndexOf(']');
+    if (firstObject >= 0 && lastObject > firstObject && (firstArray < 0 || firstObject < firstArray)) {
+      return cleaned.slice(firstObject, lastObject + 1).trim();
+    }
+    if (firstArray >= 0 && lastArray > firstArray) return cleaned.slice(firstArray, lastArray + 1).trim();
+    return cleaned;
+  };
+  const variants = storyTextScanVariants(shopText).map(trimJson);
+  const seen = new Set<string>();
+  for (const variant of variants) {
+    if (!variant || seen.has(variant)) continue;
+    seen.add(variant);
+    try {
+      parseLooseJson(variant);
+      return variant;
+    } catch {
+      // Keep trying less-escaped variants before falling back.
+    }
   }
-  if (firstArray >= 0 && lastArray > firstArray) return cleaned.slice(firstArray, lastArray + 1).trim();
-  return cleaned;
+  return trimJson(shopText);
 }
 
 function parseLooseJson(text: string): unknown {
@@ -925,18 +951,34 @@ export function parseCraftResult(messageContent: string): ParsedCraftResult | un
 }
 
 function cleanJsonLikeText(text: string): string {
-  const cleaned = text
-    .replace(/^```(?:json)?/i, '')
-    .replace(/```$/i, '')
-    .trim();
-  const firstObject = cleaned.indexOf('{');
-  const lastObject = cleaned.lastIndexOf('}');
-  const firstArray = cleaned.indexOf('[');
-  const lastArray = cleaned.lastIndexOf(']');
-  if (firstArray >= 0 && lastArray > firstArray && (firstObject < 0 || firstArray < firstObject)) {
-    return cleaned.slice(firstArray, lastArray + 1).trim();
+  const trimJson = (value: string) => {
+    const cleaned = value
+      .replace(/^```(?:json)?/i, '')
+      .replace(/```$/i, '')
+      .trim();
+    const firstObject = cleaned.indexOf('{');
+    const lastObject = cleaned.lastIndexOf('}');
+    const firstArray = cleaned.indexOf('[');
+    const lastArray = cleaned.lastIndexOf(']');
+    if (firstArray >= 0 && lastArray > firstArray && (firstObject < 0 || firstArray < firstObject)) {
+      return cleaned.slice(firstArray, lastArray + 1).trim();
+    }
+    if (firstObject >= 0 && lastObject > firstObject) return cleaned.slice(firstObject, lastObject + 1).trim();
+    return cleaned;
+  };
+  const variants = storyTextScanVariants(text).map(trimJson);
+  const seen = new Set<string>();
+  for (const variant of variants) {
+    if (!variant || seen.has(variant)) continue;
+    seen.add(variant);
+    try {
+      parseLooseJson(variant);
+      return variant;
+    } catch {
+      // Keep trying less-escaped variants before falling back.
+    }
   }
-  if (firstObject >= 0 && lastObject > firstObject) return cleaned.slice(firstObject, lastObject + 1).trim();
+  const cleaned = trimJson(text);
   return cleaned;
 }
 
@@ -1491,12 +1533,20 @@ export function loadLatestAssistantCapture(): LatestMaintextPayload {
     if (typeof getLastMessageId !== 'function') return loadLatestAssistantMaintext();
     const candidates = readAssistantStoryCandidates(getLastMessageId());
     const turnCapture = parseLatestAssistantTurnCapture(candidates);
-    if (turnCapture && (isUsableStoryText(turnCapture.maintext) || hasCapturedStoryFormat(turnCapture))) return turnCapture;
+    if (turnCapture && hasCapturedStoryFormat(turnCapture)) return turnCapture;
 
     for (let index = candidates.length - 1; index >= 0; index -= 1) {
       const message = candidates[index];
       const parsed = parseStoryMessage(String(message?.message ?? ''), message?.message_id);
-      if (isUsableStoryText(parsed.maintext) || hasCapturedStoryFormat(parsed)) return parsed;
+      if (hasCapturedStoryFormat(parsed)) return parsed;
+    }
+
+    if (turnCapture && isUsableStoryText(turnCapture.maintext)) return turnCapture;
+
+    for (let index = candidates.length - 1; index >= 0; index -= 1) {
+      const message = candidates[index];
+      const parsed = parseStoryMessage(String(message?.message ?? ''), message?.message_id);
+      if (isUsableStoryText(parsed.maintext)) return parsed;
     }
   } catch (error) {
     console.warn('[primordia] 无法读取最新捕捉楼层:', error);

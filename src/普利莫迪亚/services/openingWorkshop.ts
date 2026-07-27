@@ -2210,7 +2210,7 @@ export function buildTwinsOpeningPreset(worldbookName = ''): {
   return preset;
 }
 
-const SOLO_COOK_OPENING_MAINTEXT = `克斯从睡梦中醒来，迎接他新的一天。`;
+const SOLO_COOK_OPENING_MAINTEXT = `‹user›从睡梦中醒来，迎接他新的一天。`;
 
 export function buildSoloCookOpeningPreset(worldbookName = ''): {
   draft: OpeningWorkshopDraft;
@@ -2218,27 +2218,27 @@ export function buildSoloCookOpeningPreset(worldbookName = ''): {
 } {
   const preset = buildFixedOpeningPreset(worldbookName);
   const { draft, bundle } = preset;
-  draft.tavern.story = '克斯在解冻月清晨独自醒来，没有任何女主或陌生来客登场。他只想把铁壶酒馆收拾起来，靠做饭赚钱。';
+  draft.tavern.story = '‹user›在解冻月清晨独自醒来，没有任何女主或陌生来客登场。他只想把铁壶酒馆收拾起来，靠做饭赚钱。';
   draft.tavern.funds = '1500铜币';
   draft.tavern.stock = '少量基础食材';
   draft.theme = '单人开局';
 
   bundle.characterProfile.profile =
-    '克斯，14岁，人类。刚接手布拉姆维克村口的铁壶酒馆，穿着洗得发白的亚麻短袖衫、深棕色粗布短裤和旧围裙，赤脚在清晨下楼生火。他此刻没有等待任何相遇，只想靠做饭、卖饭和经营酒馆赚钱。';
-  bundle.characterProfile.summary = '克斯是铁壶酒馆的少年老板，慢半拍但认真，当前目标很朴素：做饭赚钱，把破旧酒馆撑起来。';
+    '‹user›，14岁，人类。刚接手布拉姆维克村口的铁壶酒馆，穿着洗得发白的亚麻短袖衫、深棕色粗布短裤和旧围裙，赤脚在清晨下楼生火。他此刻没有等待任何相遇，只想靠做饭、卖饭和经营酒馆赚钱。';
+  bundle.characterProfile.summary = '‹user›是铁壶酒馆的少年老板，慢半拍但认真，当前目标很朴素：做饭赚钱，把破旧酒馆撑起来。';
   bundle.tavernProfile.profile =
-    '铁壶酒馆位于韦斯托利亚布拉姆维克村口，是一间冷清的小型旧酒馆。前厅有六张木桌、旧木柜台、陶杯和半满酒桶，厨房里有灶台、铁锅、干木柴、粗粮、蔬菜和少量肉。这个开局没有任何女主或来访者登场，第一天从克斯独自醒来、生火、备菜开始。';
-  bundle.tavernProfile.summary = '解冻月清晨，铁壶酒馆尚未营业；克斯独自起床生火，准备靠做饭赚钱。';
+    '铁壶酒馆位于韦斯托利亚布拉姆维克村口，是一间冷清的小型旧酒馆。前厅有六张木桌、旧木柜台、陶杯和半满酒桶，厨房里有灶台、铁锅、干木柴、粗粮、蔬菜和少量肉。这个开局没有任何女主或来访者登场，第一天从‹user›独自醒来、生火、备菜开始。';
+  bundle.tavernProfile.summary = '解冻月清晨，铁壶酒馆尚未营业；‹user›独自起床生火，准备靠做饭赚钱。';
   bundle.story.maintext = SOLO_COOK_OPENING_MAINTEXT;
   bundle.story.options = ['开始备菜，准备今天营业'];
-  bundle.story.sum = '解冻月清晨，克斯从睡梦中醒来，迎接铁壶酒馆的新一天。';
+  bundle.story.sum = '解冻月清晨，‹user›从睡梦中醒来，迎接铁壶酒馆的新一天。';
 
   const initvar = fixedOpeningInitvar('fox');
   initvar.世界.当前历法.天气 = '解冻月清晨，薄雾湿冷，泥路半干，屋檐仍在滴水';
   initvar.世界.当前历法.时间 = '06:20';
   initvar.酒馆.今日营业状态 = '准备营业';
   initvar.酒馆.整体概况 =
-    '铁壶酒馆冷清但可用。这个开局没有女主相遇，也没有陌生来访者登场；第一天从克斯独自醒来、生火、备菜、盘算靠做饭赚钱开始。';
+    '铁壶酒馆冷清但可用。这个开局没有女主相遇，也没有陌生来访者登场；第一天从‹user›独自醒来、生火、备菜、盘算靠做饭赚钱开始。';
   initvar.主角.当前状态 = '清晨刚醒，正在厨房生火备菜，目标是做饭赚钱';
   initvar.世界.当前地点.具体位置 = '铁壶酒馆·厨房餐食区';
   initvar.人物羁绊 = {};

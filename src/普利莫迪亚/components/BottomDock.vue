@@ -170,6 +170,15 @@ function logTitle(log: EngineLog) {
           ></textarea>
         </label>
         <div class="dock-actions">
+          <button
+            class="pm-btn big mobile-capture-action"
+            :disabled="captureRetrying || game.isGenerating"
+            title="重新读取本回合全部助手消息，并重试变量与格式捕捉"
+            @click="retryLatestCapture"
+          >
+            <PmIcon name="refresh" :size="14" />
+            <span>{{ captureRetrying ? '扫描中' : '捕捉格式' }}</span>
+          </button>
           <button id="dock-preflight" class="pm-btn big" :disabled="game.isGenerating || (!game.actionDraft.trim() && !game.playerInput.trim())" @click="previewBeforeSend">
             <PmIcon name="scroll" :size="14" />
             <span>发送前预检</span>
@@ -479,6 +488,9 @@ function logTitle(log: EngineLog) {
 .dock-tips strong {
   color: var(--pm-gold-bright);
 }
+.mobile-capture-action {
+  display: none;
+}
 
 @media (max-width: 720px) {
   .dock {
@@ -516,10 +528,7 @@ function logTitle(log: EngineLog) {
     display: none;
   }
   .capture-retry {
-    width: 28px;
-    min-width: 28px;
-    padding: 3px;
-    justify-content: center;
+    display: none;
   }
   .mobile-panel-toggle {
     display: inline-flex;
@@ -562,13 +571,16 @@ function logTitle(log: EngineLog) {
     resize: none;
   }
   .dock-actions {
-    min-width: 84px;
+    min-width: 92px;
     gap: 6px;
+  }
+  .mobile-capture-action {
+    display: inline-flex;
   }
   .dock-actions .pm-btn.big {
     min-height: 42px;
-    padding: 8px 10px;
-    font-size: calc(12px * var(--pm-text-scale));
+    padding: 8px 9px;
+    font-size: calc(11.5px * var(--pm-text-scale));
   }
   .log-line {
     grid-template-columns: 92px 56px 48px 1fr;

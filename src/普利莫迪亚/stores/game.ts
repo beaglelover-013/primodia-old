@@ -4815,21 +4815,12 @@ export const useGameStore = defineStore('primordia', () => {
     const inventoryPatchExamples = plan.inventoryDeltas.map(delta =>
       `  { "op": "delta", "path": "/库房/${delta.category}/${delta.name}/${delta.field}", "value": ${delta.delta} }`,
     );
-    const moneyPatchExamples = plan.incomeCopper > 0
-      ? [
-          `  { "op": "delta", "path": "/酒馆/资金/钱匣/折算合计铜币", "value": ${plan.incomeCopper} }`,
-          `  { "op": "delta", "path": "/酒馆/资金/折算合计铜币", "value": ${plan.incomeCopper} }`,
-        ]
-      : [];
-    const requiredPatchExamples = [...inventoryPatchExamples, ...moneyPatchExamples];
+    const requiredPatchExamples = inventoryPatchExamples;
     const settlementRequests = [
       plan.inventoryDeltas.length
         ? `【必须写变量补丁】普通客流已经卖出的是“份/杯/块”等单份，不是一整批库存；库存必须扣减: ${plan.inventoryDeltas
             .map(delta => `库房.${delta.category}.${delta.name}.${delta.field} ${delta.delta}${delta.unitLabel}`)
             .join('、')}。如果该物品没有“当前剩余份数”字段，才改扣“数量”。`
-        : '',
-      plan.incomeCopper > 0
-        ? `【必须写变量补丁】普通客流收入必须进入钱匣: 酒馆.资金.钱匣.折算合计铜币 +${plan.incomeCopper}，酒馆.资金.折算合计铜币 +${plan.incomeCopper}。能换算五币种时，同步 replace 钱匣五币种和酒馆.资金顶层五币种；不会换算也不能漏掉折算合计铜币 delta。`
         : '',
       plan.enteringGroup ? '如这批普通客流经营顺利，可按规则小幅增加 酒馆.声望.数值，并同步声望结构。' : '',
     ]
@@ -4848,7 +4839,8 @@ export const useGameStore = defineStore('primordia', () => {
         ].join('\n')
       : '';
     return [
-      `普通营业客流：${plan.text}`,
+      '【普通营业客流】',
+      plan.text,
       settlementRequests,
       patchTemplate,
       '【背景处理规则】这只是酒馆普通经营背景。正文里请自然带过，不要让这些普通客人抢走当前互动；不要为他们输出 <guest_update>；不要额外重新估算库存、人数或收入；必须只按上面的待结算项写变量补丁。',
@@ -5251,10 +5243,10 @@ export const useGameStore = defineStore('primordia', () => {
       : /【本地界面记录】/.test(rawUserText)
         ? rawUserText
         : `<user>${rawUserText}</user>`;
-    const hasFrontendSettlement = /前端已结算/.test(rawUserText);
     const timeLine = options.settledFact && options.timeChange
       ? `时间变化: ${options.timeChange.from} -> ${options.timeChange.to}（推进${options.timeChange.minutes}分钟）`
       : '';
+    const narrativeTaskHint = summarizeNarrativeTaskHint(options.aiHint);
 
     return [
       '<玩家本回合行动>',
@@ -5284,18 +5276,8 @@ export const useGameStore = defineStore('primordia', () => {
       buildOutputFormatInstruction(options.aiHint, {
         allowGuestUpdate: Boolean(options.businessVisitorPlan?.shouldInject || activeGuestGroups().length),
       }),
-      '',
-      '【本回合叙述任务】',
-      [
-        '承接当前权威局势，写出本回合行动造成的连续剧情。',
-        '不要重启场景；地点变化只通过 MVU 地点补丁表达。',
-        hasFrontendSettlement
-          ? '标注“前端已结算”的硬结算内容不要重复估算；但如果本回合自然产生主角状态、临时状态、地点、时间、人物关系、声望或其他未结算变化，仍应通过隐藏 <UpdateVariable>/<JSONPatch> 更新。'
-          : '',
-        summarizeNarrativeTaskHint(options.aiHint),
-      ]
-        .filter(Boolean)
-        .join('\n'),
+      narrativeTaskHint ? '\n【本回合叙述任务】' : '',
+      narrativeTaskHint,
     ]
       .filter(section => section !== '')
       .join('\n');
@@ -5668,9 +5650,41 @@ export const useGameStore = defineStore('primordia', () => {
     };
   }
 
+  function decodeEscapedXmlScanText(content: string) {
+    let decoded = String(content || '').trim();
+    const wrapped =
+      (decoded.startsWith('"') && decoded.endsWith('"')) ||
+      (decoded.startsWith("'") && decoded.endsWith("'"));
+    if (wrapped) decoded = decoded.slice(1, -1);
+    return decoded
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;|&apos;/gi, "'")
+      .replace(/&amp;/gi, '&')
+      .replace(/\\\\/g, '\\')
+      .replace(/\\r\\n|\\n|\\r/g, '\n')
+      .replace(/\\t/g, '\t')
+      .replace(/\\"/g, '"')
+      .replace(/\\'/g, "'");
+  }
+
+  function xmlScanVariants(content: string) {
+    const variants: string[] = [];
+    const seen = new Set<string>();
+    const add = (value: string) => {
+      if (!value || seen.has(value)) return;
+      seen.add(value);
+      variants.push(value);
+    };
+    add(String(content || ''));
+    add(decodeEscapedXmlScanText(content));
+    return variants;
+  }
+
   function extractLastXmlTag(content: string, tagName: string) {
     const regex = new RegExp(`<${tagName}\\b[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'gi');
-    const matches = [...String(content || '').matchAll(regex)];
+    const matches = xmlScanVariants(content).flatMap(source => [...source.matchAll(regex)]);
     return matches.at(-1)?.[1]?.trim() ?? '';
   }
 
@@ -11330,7 +11344,6 @@ export const useGameStore = defineStore('primordia', () => {
     const statData = clonePlainData(rawStatData);
     applyMvuStatData(statData, { restoreInventory: options.restoreInventory ?? true });
     syncGeneratedShopWithLocation(options.messageId);
-    if (options.messageId === undefined) void migrateCurrentReputationMvuShape();
     return true;
   }
 
@@ -11738,7 +11751,6 @@ export const useGameStore = defineStore('primordia', () => {
       const result = await parseNarrativeMvuMessage(latest.fullMessage, baseData);
       if (!result.hasVariablePatch) return false;
       applyMvuStatData(result.mvuData, { restoreInventory: true });
-      await writeCurrentMessageStatData(result.mvuData, latest.messageId);
       logMvuSyncMismatches(result.mvuData);
       syncGeneratedShopWithLocation(latest.messageId);
       return true;
@@ -11810,7 +11822,7 @@ export const useGameStore = defineStore('primordia', () => {
     const latest = loadLatestAssistantCapture();
     if (!latest.fullMessage?.trim()) {
       if (!options.silentWhenEmpty) {
-        pushLog('提示', '没有读到可扫描的最新正文。', {
+        pushLog('提示', '没有读到可扫描的最新楼层内容。', {
           source: 'engine',
           authoritative: true,
           tone: 'amber',
@@ -11866,7 +11878,7 @@ export const useGameStore = defineStore('primordia', () => {
     }
 
     if (wants('tavernState') && latest.tavernStateUpdates?.length) {
-      pushLog('提示', '最新正文包含经营状态格式，但缺少本回合物品消耗来源；请用发送行动流程收录，或在经营附录手动维护。', {
+        pushLog('提示', '最新楼层内容包含经营状态格式，但缺少本回合物品消耗来源；请用发送行动流程收录，或在经营附录手动维护。', {
         source: 'engine',
         authoritative: true,
         tone: 'amber',
@@ -11876,7 +11888,7 @@ export const useGameStore = defineStore('primordia', () => {
 
     if (!applied.length) {
       if (!options.silentWhenEmpty) {
-        pushLog('提示', '已扫描最新正文，但没有发现可新增/刷新到当前前端的目标格式。', {
+        pushLog('提示', '已扫描最新楼层内容，但没有发现可新增/刷新到当前前端的目标格式。', {
           source: 'engine',
           authoritative: true,
           tone: 'amber',
@@ -11888,7 +11900,7 @@ export const useGameStore = defineStore('primordia', () => {
 
     markLocalStateDirty();
     await writeChatSave(latest);
-    pushLog('系统', `已从最新正文刷新捕捉格式：${applied.join('、')}。`, {
+    pushLog('系统', `已从最新楼层内容刷新捕捉格式：${applied.join('、')}。`, {
       source: 'engine',
       authoritative: true,
       tone: 'cyan',
@@ -11961,7 +11973,7 @@ export const useGameStore = defineStore('primordia', () => {
 
     const latest = loadLatestAssistantCapture();
     if (!latest.fullMessage?.trim() || typeof latest.messageId !== 'number') {
-      pushLog('提示', '没有读到可重新捕捉的最新助手正文。', {
+      pushLog('提示', '没有读到可重新捕捉的最新助手楼层。', {
         source: 'engine',
         authoritative: true,
         tone: 'amber',
@@ -11972,7 +11984,7 @@ export const useGameStore = defineStore('primordia', () => {
 
     const capturedFormatApplied = await refreshCapturedFormatsFromLatestMessage('all', { silentWhenEmpty: true });
     if (!capturedFormatApplied) {
-      pushLog('提示', '已重新扫描本回合正文，但没有发现可识别的捕捉格式；当前前端状态未作改动。', {
+      pushLog('提示', '已重新扫描本回合消息，但没有发现可识别的捕捉格式；当前前端状态未作改动。', {
         source: 'engine',
         authoritative: true,
         tone: 'amber',
@@ -12120,7 +12132,6 @@ export const useGameStore = defineStore('primordia', () => {
           const temporaryStatesSynced = applyTemporaryStatesFromMvuData(finalMvuData);
           const temporaryStateRemovalsApplied = applyTemporaryStateRemovalsFromPatch(result.latest?.fullMessage);
           if (temporaryStateRemovalsApplied) finalMvuData = statDataWithCurrentTemporaryStates(finalMvuData);
-          await writeCurrentMessageStatData(finalMvuData, generatedMessageId);
           if (inventorySynced || satchelSynced) {
             pushLog('系统', `${inventorySynced && satchelSynced ? '库房与行囊' : inventorySynced ? '库房' : '行囊'}已按本回合变量/MVU结果同步。`, {
               source: 'ai',
@@ -12166,13 +12177,11 @@ export const useGameStore = defineStore('primordia', () => {
         if (temporaryStatesTicked) {
           const countdownBase = finalMvuData ?? getAuthoritativeMvuData(generatedMessageId, '本回合临时状态倒计时');
           finalMvuData = statDataWithCurrentTemporaryStates(countdownBase);
-          await writeCurrentMessageStatData(finalMvuData, generatedMessageId);
           applyTemporaryStatesFromMvuData(finalMvuData);
         }
         if (result.latest?.tavernStateUpdates?.length && applyTavernStateUpdates(result.latest.tavernStateUpdates, stateDiscoveries, completedTurn)) {
           const stateBase = finalMvuData ?? getAuthoritativeMvuData(generatedMessageId, '经营状态收录');
           finalMvuData = statDataWithCurrentTemporaryStates(stateBase);
-          await writeCurrentMessageStatData(finalMvuData, generatedMessageId);
         }
         successfulNarrationTurn.value = completedTurn;
         clearActionDraft();

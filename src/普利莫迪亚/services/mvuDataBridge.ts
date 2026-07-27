@@ -50,6 +50,32 @@ function hasPrimordiaStatDataContent(value: unknown): value is PlainRecord {
   return looksLikePrimordiaStatData(value) && Object.keys(value as PlainRecord).length > 0;
 }
 
+function countDataLeaves(value: unknown): number {
+  if (value === undefined || value === null) return 0;
+  if (typeof value !== 'object') return 1;
+  if (Array.isArray(value)) return value.reduce((total, item) => total + countDataLeaves(item), 0);
+  return Object.values(value as PlainRecord).reduce((total, item) => total + countDataLeaves(item), 0);
+}
+
+export function primordiaStatDataWeight(value: unknown): number {
+  const statData = unwrapPrimordiaStatData(value);
+  if (!statData) return 0;
+  return countDataLeaves(statData);
+}
+
+export function isSubstantialPrimordiaStatData(value: unknown): value is PlainRecord {
+  const statData = unwrapPrimordiaStatData(value);
+  if (!statData) return false;
+  const hasCoreRoots = Boolean(statData['\u4e16\u754c'] && statData['\u9152\u9986']);
+  const hasLongTermRoots = Boolean(
+    statData['\u5e93\u623f'] ||
+      statData['\u884c\u56ca'] ||
+      statData['\u4eba\u7269\u7f81\u7eca'] ||
+      statData['\u519c\u7530\u4e0e\u9152\u7a96'],
+  );
+  return hasCoreRoots && hasLongTermRoots && countDataLeaves(statData) >= 30;
+}
+
 function canonicalizePrimordiaStatData(statData: PlainRecord): PlainRecord {
   const next = clonePlainData(statData);
   if (
@@ -122,18 +148,26 @@ function wrapReadableMvuData(value: unknown): PlainRecord | null {
 /** 按示例项目的顺序读取：最新 assistant → latest → 0 层。 */
 export async function getPrimordiaMvuData(): Promise<PlainRecord> {
   await ensureMvuInitialized();
+  let firstReadable: PlainRecord | null = null;
+  const rememberReadable = (value: PlainRecord | null) => {
+    if (!value) return null;
+    if (!firstReadable) firstReadable = value;
+    return isSubstantialPrimordiaStatData(value) ? value : null;
+  };
 
   try {
     if (typeof getChatMessages === 'function') {
       const assistantMessages = getChatMessages(-1, { role: 'assistant' });
-      const latestAssistant = assistantMessages?.at(-1);
-      const messageId = latestAssistant?.message_id;
-      if (typeof messageId === 'number' && typeof Mvu !== 'undefined' && typeof Mvu.getMvuData === 'function') {
-        const mvuData = wrapReadableMvuData(Mvu.getMvuData({ type: 'message', message_id: messageId }));
-        if (mvuData) return mvuData;
+      const newestFirst = [...(assistantMessages ?? [])].reverse();
+      for (const assistantMessage of newestFirst) {
+        const messageId = assistantMessage?.message_id;
+        if (typeof messageId === 'number' && typeof Mvu !== 'undefined' && typeof Mvu.getMvuData === 'function') {
+          const mvuData = rememberReadable(wrapReadableMvuData(Mvu.getMvuData({ type: 'message', message_id: messageId })));
+          if (mvuData) return mvuData;
+        }
+        const messageData = rememberReadable(wrapReadableMvuData(assistantMessage?.data));
+        if (messageData) return messageData;
       }
-      const messageData = wrapReadableMvuData(latestAssistant?.data);
-      if (messageData) return messageData;
     }
   } catch (error) {
     console.warn('[primordia] 读取最新 assistant MVU 数据失败:', error);
@@ -147,7 +181,7 @@ export async function getPrimordiaMvuData(): Promise<PlainRecord> {
   for (const option of fallbackOptions) {
     try {
       if (typeof Mvu !== 'undefined' && typeof Mvu.getMvuData === 'function') {
-        const mvuData = wrapReadableMvuData(Mvu.getMvuData(option));
+        const mvuData = rememberReadable(wrapReadableMvuData(Mvu.getMvuData(option)));
         if (mvuData) return mvuData;
       }
     } catch {
@@ -156,7 +190,7 @@ export async function getPrimordiaMvuData(): Promise<PlainRecord> {
 
     try {
       if (typeof getVariables === 'function') {
-        const variables = wrapReadableMvuData(getVariables(option));
+        const variables = rememberReadable(wrapReadableMvuData(getVariables(option)));
         if (variables) return variables;
       }
     } catch {
@@ -164,6 +198,7 @@ export async function getPrimordiaMvuData(): Promise<PlainRecord> {
     }
   }
 
+  if (firstReadable) return firstReadable;
   return wrapPrimordiaMvuData({});
 }
 
@@ -222,6 +257,14 @@ function readExistingMvuEnvelope(option: PlainRecord): PlainRecord {
 export async function writePrimordiaStatData(statData: PlainRecord, option: PlainRecord): Promise<boolean> {
   await ensureMvuInitialized();
   const nextStatData = canonicalizePrimordiaStatData(statData);
+  if (!isSubstantialPrimordiaStatData(nextStatData)) {
+    console.warn('[primordia] 拒绝写入疑似残缺的 stat_data，避免覆盖完整变量:', {
+      option,
+      keys: Object.keys(nextStatData),
+      weight: primordiaStatDataWeight(nextStatData),
+    });
+    return false;
+  }
   let wrote = false;
   let lastError: unknown;
 
