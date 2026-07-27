@@ -116,6 +116,7 @@ const fixedOpenings = computed(() => [
     id: 'rabbit-twins',
     title: '莲家双子上门',
     badge: '固定开场',
+    image: 'https://files.catbox.moe/pp87ey.png',
     summary: `一对一模一样的兔族双子推开${displayedTavernName.value}的门：姐姐莲洵趴上柜台连珠炮地问吃住，妹妹莲沁安静地站在半步后。`,
     details: [displayedProtagonistName.value, displayedTavernName.value, '莲洵', '莲沁'],
   },

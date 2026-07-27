@@ -141,10 +141,15 @@ export interface ParsedBusinessAgreementUpdate {
   name: string;
   counterparty: string;
   cadence: 'daily' | 'weekly';
+  intervalDays?: number;
   cashboxDeltaCopper: number;
   inventoryChanges: ParsedBusinessAgreementInventoryChange[];
   reminder: string;
   eventRule?: ParsedBusinessAgreementEventRule;
+  status?: string;
+  nextDueText?: string;
+  lastSettledText?: string;
+  failurePolicy?: string;
 }
 
 export type CharacterBehaviorUpdateAction = 'learn' | 'remove' | 'update';
@@ -318,6 +323,53 @@ function decodeEscapedStoryText(content: string) {
     .replace(/\\'/g, "'");
 }
 
+function extractEmbeddedStoryTextFields(content: string): string[] {
+  const found: string[] = [];
+  const push = (value: unknown) => {
+    if (typeof value !== 'string') return;
+    const text = value.trim();
+    if (!text) return;
+    if (/<(?:maintext|NARRATIVE|shop|craft_result|guest_update|regular_guest_update|rumor_record|promise_update|tavern_state_update|business_agreement_update|character_behavior_update|UpdateVariable|JSONPatch)\b/i.test(text)) {
+      found.push(text);
+    }
+  };
+  const walk = (value: unknown, depth = 0) => {
+    if (depth > 4 || value === null || value === undefined) return;
+    if (typeof value === 'string') {
+      push(value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach(item => walk(item, depth + 1));
+      return;
+    }
+    if (typeof value === 'object') {
+      Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
+        if (/^(?:normalizedMessage|message|fullMessage|content|text|output|raw|response)$/i.test(key)) push(item);
+        walk(item, depth + 1);
+      });
+    }
+  };
+
+  for (const source of [content, decodeHtmlEntities(content), decodeEscapedStoryText(content), decodeEscapedStoryText(decodeHtmlEntities(content))]) {
+    try {
+      walk(JSON.parse(source));
+    } catch {
+      // Not a JSON wrapper; regex extraction below still handles common debug blobs.
+    }
+    const regex = /["'](?:normalizedMessage|message|fullMessage|content|text|output|raw|response)["']\s*:\s*("(?:\\.|[^"\\])*")/gi;
+    for (const match of source.matchAll(regex)) {
+      try {
+        push(JSON.parse(match[1]));
+      } catch {
+        push(decodeEscapedStoryText(match[1] ?? ''));
+      }
+    }
+  }
+
+  return found;
+}
+
 function storyTextScanVariants(content: string) {
   const variants: string[] = [];
   const seen = new Set<string>();
@@ -331,6 +383,12 @@ function storyTextScanVariants(content: string) {
   add(decodeHtmlEntities(content));
   add(decodeEscapedStoryText(content));
   add(decodeEscapedStoryText(decodeHtmlEntities(content)));
+  for (const embedded of extractEmbeddedStoryTextFields(content)) {
+    add(embedded);
+    add(decodeHtmlEntities(embedded));
+    add(decodeEscapedStoryText(embedded));
+    add(decodeEscapedStoryText(decodeHtmlEntities(embedded)));
+  }
 
   return variants;
 }
@@ -392,7 +450,10 @@ export function parseStoryMessage(
   messageId?: number,
   options: { preferEmbeddedNormalized?: boolean } = {},
 ): StoryMessagePayload {
-  const embeddedMessages = extractEmbeddedNormalizedMessages(messageContent);
+  const embeddedMessages = [
+    ...extractEmbeddedNormalizedMessages(messageContent),
+    ...extractEmbeddedStoryTextFields(messageContent),
+  ];
   const parsedContent = options.preferEmbeddedNormalized === false
     ? [messageContent, ...embeddedMessages].filter(Boolean).join('\n\n')
     : embeddedMessages.at(-1) ?? messageContent;
@@ -1259,6 +1320,143 @@ function normalizeAgreementCadence(raw: string, fallbackText = ''): ParsedBusine
   return 'daily';
 }
 
+function normalizeAgreementIntervalDays(raw: string, cadence: ParsedBusinessAgreementUpdate['cadence']) {
+  const value = raw.trim();
+  const explicit = value.match(/每\s*(\d{1,3})\s*天/);
+  if (explicit) return Math.max(1, Math.floor(Number(explicit[1]) || 1));
+  return cadence === 'weekly' ? 7 : 1;
+}
+
+function parseShortAgreementMoney(text: string) {
+  const value = text.trim();
+  if (!value || /^无|没有|none$/i.test(value)) return 0;
+  const silver = Number(value.match(/([+-]?\d+(?:\.\d+)?)\s*银/)?.[1] ?? 0) * 100;
+  const copper = Number(value.match(/([+-]?\d+)\s*铜/)?.[1] ?? 0);
+  const total = Math.trunc(silver + copper);
+  if (total) return /支出|支付|扣|-\s*\d/.test(value) ? -Math.abs(total) : total;
+  const direct = value.match(/([+-]?\d+)/);
+  return direct ? Math.trunc(Number(direct[1]) || 0) : 0;
+}
+
+function parseShortAgreementInventory(text: string): ParsedBusinessAgreementInventoryChange[] {
+  const value = text.trim();
+  if (!value || /^无|没有|none$/i.test(value)) return [];
+  return value
+    .split(/[;；、，,]\s*/)
+    .map(part => {
+      const match = part.trim().match(/^(?:库房\.)?([^:.：]+)\.([^:.：]+)\s*[:：]\s*([+-]?\d+)$/);
+      if (!match) return undefined;
+      const category = match[1]?.trim() || '杂物';
+      const name = match[2]?.trim();
+      const qty = Math.trunc(Number(match[3]) || 0);
+      return name && qty !== 0 ? { name, category, qty, tags: [] } : undefined;
+    })
+    .filter((entry): entry is ParsedBusinessAgreementInventoryChange => Boolean(entry));
+}
+
+function inferShortAgreementKind(
+  fields: Record<string, string>,
+  cashboxDeltaCopper: number,
+  inventoryChanges: ParsedBusinessAgreementInventoryChange[],
+): ParsedBusinessAgreementUpdate['kind'] {
+  const explicit = normalizeAgreementKind(fields['类型'] || fields.kind || '');
+  if (fields['类型'] || fields.kind) return explicit;
+  if (inventoryChanges.some(item => item.qty > 0)) return 'delivery';
+  if (cashboxDeltaCopper > 0) return 'sideBusiness';
+  if (/房费|租金|房客/.test(`${fields['名称'] ?? ''} ${fields['说明'] ?? ''}`)) return 'rent';
+  return 'wage';
+}
+
+function inferShortAgreementCounterparty(name: string, fields: Record<string, string>) {
+  const explicit = fields['约定对象'] || fields['对象'] || fields.counterparty || fields.person;
+  if (explicit) return explicit.trim();
+  return name.split(/每|日|周|月|送|帮|工资|房费|租金/)[0]?.trim() || name;
+}
+
+function normalizeShortBusinessAgreement(name: string, fields: Record<string, string>): ParsedBusinessAgreementUpdate | undefined {
+  const status = fields['状态'] || '执行中';
+  const cadenceText = fields['周期'] || fields.cadence || fields.frequency || '';
+  const cashboxDeltaCopper = parseShortAgreementMoney(fields['扣款'] || fields['钱匣'] || fields.cashbox_delta_copper || '');
+  const inventoryChanges = parseShortAgreementInventory(fields['入库'] || fields['库存'] || fields.inventory_changes || '');
+  const counterparty = inferShortAgreementCounterparty(name, fields);
+  if (!name || (!cashboxDeltaCopper && !inventoryChanges.length)) return undefined;
+  const nextDueText = fields['下次'] || fields.next || fields.next_due || '';
+  const lastSettledText = fields['上次'] || fields.last || fields.last_settled || '';
+  const failurePolicy = fields['失败'] || fields.failure || fields.failure_policy || '';
+  const reminder =
+    fields['说明'] ||
+    fields.reminder ||
+    `${cadenceText || '定期'}${cashboxDeltaCopper ? `，钱匣${cashboxDeltaCopper > 0 ? '+' : ''}${cashboxDeltaCopper}铜` : ''}${
+      inventoryChanges.length
+        ? `，${inventoryChanges.map(item => `${item.category}.${item.name}${item.qty > 0 ? '+' : ''}${item.qty}`).join('、')}`
+        : ''
+    }。`;
+  const cadence = normalizeAgreementCadence(cadenceText, name);
+  const action: ParsedBusinessAgreementUpdate['action'] = /取消|删除|停止/.test(status)
+    ? 'cancel'
+    : /更新|修改|调整|改价|改期/.test(status)
+      ? 'update'
+      : 'add';
+  return {
+    action,
+    kind: inferShortAgreementKind({ ...fields, 名称: name }, cashboxDeltaCopper, inventoryChanges),
+    name,
+    counterparty,
+    cadence,
+    intervalDays: normalizeAgreementIntervalDays(cadenceText, cadence),
+    cashboxDeltaCopper,
+    inventoryChanges,
+    reminder,
+    status,
+    nextDueText,
+    lastSettledText,
+    failurePolicy: failurePolicy || '余额不足暂停',
+  };
+}
+
+function parseShortBusinessAgreementUpdates(text: string): ParsedBusinessAgreementUpdate[] {
+  const source = storyTextScanVariants(text).find(variant => /^\s*经营约定\s*[:：]/m.test(variant)) ?? text;
+  const lines = source.split(/\r?\n/);
+  const startIndex = lines.findIndex(line => /^\s*经营约定\s*[:：]\s*$/.test(line));
+  if (startIndex < 0) return [];
+  const updates: ParsedBusinessAgreementUpdate[] = [];
+  let currentName = '';
+  let currentFields: Record<string, string> = {};
+  const flush = () => {
+    const update = normalizeShortBusinessAgreement(currentName.trim(), currentFields);
+    if (update) updates.push(update);
+    currentName = '';
+    currentFields = {};
+  };
+  for (let index = startIndex + 1; index < lines.length; index += 1) {
+    const raw = lines[index] ?? '';
+    if (!raw.trim()) continue;
+    const lineMatch = raw.match(/^\s*([^:：]+)\s*[:：]\s*(.*)$/);
+    if (!lineMatch) {
+      if (/^\S/.test(raw) && currentName) break;
+      continue;
+    }
+    const key = lineMatch[1]?.trim() ?? '';
+    const value = lineMatch[2]?.trim() ?? '';
+    const isField = /^(状态|周期|下次|上次|扣款|入库|失败|说明|约定对象|对象|类型)$/i.test(key);
+    if (!isField && !value) {
+      flush();
+      currentName = key;
+      continue;
+    }
+    if (isField && currentName) {
+      currentFields[key] = value;
+      continue;
+    }
+    if (!currentName && !isField && value) {
+      currentName = key;
+      currentFields['说明'] = value;
+    }
+  }
+  flush();
+  return updates;
+}
+
 function normalizeAgreementEventRule(record: Record<string, unknown>): ParsedBusinessAgreementEventRule | undefined {
   const nested = record.event_rule ?? record.eventRule;
   const eventRecord = nested && typeof nested === 'object' ? nested as Record<string, unknown> : record;
@@ -1310,6 +1508,10 @@ function normalizeBusinessAgreementUpdate(value: unknown): ParsedBusinessAgreeme
     .filter((entry): entry is ParsedBusinessAgreementInventoryChange => Boolean(entry));
   const reminder = readJsonFirstString(record, ['reminder', '提醒', '说明', '内容']);
   const eventRule = normalizeAgreementEventRule(record);
+  const status = readJsonFirstString(record, ['status', '状态']);
+  const nextDueText = readJsonFirstString(record, ['next', 'next_due', 'nextDue', '下次', '下次执行日']);
+  const lastSettledText = readJsonFirstString(record, ['last', 'last_settled', 'lastSettled', '上次', '上次执行日']);
+  const failurePolicy = readJsonFirstString(record, ['failure', 'failure_policy', 'failurePolicy', '失败', '失败策略']);
   if (!name && !id) return undefined;
   if (action !== 'cancel' && (!name || !counterparty || (!cashboxDeltaCopper && !inventoryChanges.length))) return undefined;
   return {
@@ -1319,15 +1521,22 @@ function normalizeBusinessAgreementUpdate(value: unknown): ParsedBusinessAgreeme
     name: name || id,
     counterparty,
     cadence: normalizeAgreementCadence(cadenceText, `${name} ${reminder}`),
+    intervalDays: normalizeAgreementIntervalDays(cadenceText, normalizeAgreementCadence(cadenceText, `${name} ${reminder}`)),
     cashboxDeltaCopper,
     inventoryChanges,
     reminder: reminder || name || id,
     ...(eventRule ? { eventRule } : {}),
+    ...(status ? { status } : {}),
+    ...(nextDueText ? { nextDueText } : {}),
+    ...(lastSettledText ? { lastSettledText } : {}),
+    ...(failurePolicy ? { failurePolicy } : {}),
   };
 }
 
 export function parseBusinessAgreementUpdates(messageContent: string): ParsedBusinessAgreementUpdate[] {
   const updateText = extractLastTag(stripThinkingBlocks(messageContent), 'business_agreement_update');
+  const shortUpdates = parseShortBusinessAgreementUpdates(updateText || stripThinkingBlocks(messageContent));
+  if (shortUpdates.length) return shortUpdates;
   if (!updateText) return [];
   try {
     const parsed = parseLooseJson(cleanJsonLikeText(updateText));

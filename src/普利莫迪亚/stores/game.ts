@@ -537,9 +537,11 @@ export interface BusinessAgreement {
   counterparty: string;
   enabled: boolean;
   cadence: 'daily' | 'weekly';
+  intervalDays: number;
   cashboxDeltaCopper: number;
   inventoryChanges: BusinessAgreementInventoryChange[];
   reminder: string;
+  failurePolicy: string;
   eventRule?: BusinessAgreementEventRule;
   nextDueDaySerial: number;
   lastSettledDaySerial?: number;
@@ -683,6 +685,7 @@ export interface StreetShop {
 
 export interface FarmPlot {
   id: string;
+  label?: string;
   crop: string;
   stage: number;
   stageMax: number;
@@ -2079,6 +2082,29 @@ export const useGameStore = defineStore('primordia', () => {
     return calendar.year * 12 * 30 + calendar.monthIndex * 30 + calendar.day;
   }
 
+  function serialDayToAgreementDate(serialDay: number) {
+    const safeDay = Math.max(1, Math.floor(Number(serialDay) || 1));
+    const adjusted = safeDay - 1;
+    const year = Math.floor(adjusted / 360);
+    const rem = adjusted % 360;
+    const month = Math.floor(rem / 30) + 1;
+    const day = (rem % 30) + 1;
+    return `${year}-${month}-${day}`;
+  }
+
+  function parseAgreementDateText(value: unknown) {
+    const text = String(value ?? '').trim();
+    const match = text.match(/(\d{3,5})\D+(\d{1,2})\D+(\d{1,2})(?:\s+([0-2]?\d:[0-5]\d))?/);
+    if (!match) return undefined;
+    const year = Math.max(1, Math.floor(Number(match[1]) || 0));
+    const month = Math.max(1, Math.min(12, Math.floor(Number(match[2]) || 1)));
+    const day = Math.max(1, Math.min(30, Math.floor(Number(match[3]) || 1)));
+    return {
+      daySerial: year * 12 * 30 + (month - 1) * 30 + day,
+      time: match[4] ? normalizeClockText(match[4], '') : '',
+    };
+  }
+
   function currentSerialMinute() {
     return currentCalendarDay() * 24 * 60 + clockToMinutes(calendar.clock);
   }
@@ -3138,6 +3164,15 @@ export const useGameStore = defineStore('primordia', () => {
     const text = value.trim();
     if (!text) return fallback;
     if (/^\d+$/.test(text)) return Number(text);
+    const dashed = text.match(/(\d{3,4})\s*[-/]\s*(\d{1,2})\s*[-/]\s*(\d{1,2})/);
+    if (dashed) {
+      const year = Number(dashed[1]);
+      const month = Number(dashed[2]);
+      const day = Number(dashed[3]);
+      if (Number.isFinite(year) && Number.isFinite(month) && Number.isFinite(day)) {
+        return year * 12 * 30 + (Math.max(1, month) - 1) * 30 + day;
+      }
+    }
     const match = text.match(/(\d+)\s*年\s*[·\s-]*([^\s·第]+月)\s*第\s*(\d+)\s*日/);
     if (!match) return fallback;
     const year = Number(match[1]);
@@ -5180,12 +5215,13 @@ export const useGameStore = defineStore('primordia', () => {
         '格式示例：<tavern_state_update>[{"action":"add","name":"壁炉香草熏香","target_region":"主厅接待区","duration_turns":4,"description":"补充一次木柴后，壁炉温暖和草木香会持续约4回合，降低客人等待时的不耐烦。","guest_response_hint":"客人进门后会更容易放松，愿意多坐一会儿。"}]</tavern_state_update>',
       ].join('\n'),
       [
-        '如果正文明确谈妥员工工资、房客房费、定期送货或副业收支，请在正文后输出 <business_agreement_update> 严格 JSON 数组。',
-        '字段：action(add/update/cancel)、kind(wage/rent/delivery/sideBusiness)、name、counterparty、cadence(daily/weekly)、cashbox_delta_copper、inventory_changes、reminder。',
-        'cashbox_delta_copper 是每次履行时进/出钱匣的铜币变化：酒馆付钱写负数，酒馆收钱写正数；inventory_changes 是每次履行时进/出库房的物品变化，数量增加写正数，消耗写负数。不要把每周约定平摊成每日约定；正文说每周就写 cadence:"weekly"。',
-        '条件、金额、频率或对象不明确时不要创建；只记录已经谈妥的长期约定，不记录一句随口承诺。',
-        '工资示例：<business_agreement_update>[{"action":"add","kind":"wage","name":"绵暖帮工日薪","counterparty":"绵暖","cadence":"daily","cashbox_delta_copper":-30,"inventory_changes":[],"reminder":"每日从钱匣支付绵暖帮工工资30铜。"}]</business_agreement_update>',
-        '送货示例：<business_agreement_update>[{"action":"add","kind":"delivery","name":"屠户巴克每周送肉","counterparty":"屠户巴克","cadence":"weekly","cashbox_delta_copper":-175,"inventory_changes":[{"name":"猪肉","category":"食材","qty":14,"tags":["肉类","红肉"]},{"name":"牛肉","category":"食材","qty":7,"tags":["肉类","红肉"]}],"reminder":"每周支付175铜，屠户巴克送来猪肉14份、牛肉7份入库。"}]</business_agreement_update>',
+        '如果正文明确谈妥员工工资、房客房费、定期送货、每日来访、定时帮工或副业收支，请在正文后输出 <business_agreement_update>，内容使用“经营约定”短格式；这是前端捕捉记录，不是 MVU/stat_data 变量。',
+        '字段：状态、周期、下次、上次、扣款、入库、失败。周期写“每N天”，例如“每1天 / 每7天 / 每15天”；下次/上次写 YYYY-M-D，可附 HH:mm；扣款写“钱匣:-250”或“无”；入库写“库房.分类.物品:+数量”或“无”。',
+        '前端会读取 MVU 日期来判断是否到期；到期后由前端经营附录结算钱匣与库房，并在发送包里提示 AI 自然承接。不要把每周约定平摊成每日约定，不要把经营约定写进 <UpdateVariable>/<JSONPatch>。',
+        '如果后续正文中对已有约定讨价还价、改送货日、改数量、改周期、暂停或取消，请再次输出同一对象的 <business_agreement_update>；名称尽量沿用原约定，或至少保留对象和物品名，前端会覆盖旧约定。',
+        '条件、金额、频率、对象或下次时间不明确时不要创建；只记录已经谈妥的长期约定，不记录一句随口承诺。',
+        '短格式示例：<business_agreement_update>\n经营约定:\n  霞枫每周温室鲜蔬:\n    状态: 执行中\n    周期: 每7天\n    下次: 1303-3-17\n    上次: 1303-3-10\n    扣款: 钱匣:-250\n    入库: 库房.食材.温室鲜蔬:+1\n    失败: 余额不足暂停\n</business_agreement_update>',
+        '十五天示例：<business_agreement_update>\n经营约定:\n  霞枫半月温室鲜蔬:\n    状态: 执行中\n    周期: 每15天\n    下次: 1303-3-25\n    上次: 1303-3-10\n    扣款: 钱匣:-500\n    入库: 库房.食材.温室鲜蔬:+1\n    失败: 余额不足暂停\n</business_agreement_update>',
       ].join('\n'),
       [
         '如果配角在某个酒馆区域学会、承担或表现出以后可反复做的后台小动作，请在正文后输出 <character_behavior_update>...</character_behavior_update> 严格 JSON 数组。',
@@ -6077,6 +6113,12 @@ export const useGameStore = defineStore('primordia', () => {
     return Object.values(temporaryStates.value.酒馆区域).flatMap(list => list ?? []).find(state => state.维持项ID === entry.id);
   }
 
+  function removeMaintainedTemporaryState(entry: TavernMaintenanceEntry) {
+    Object.keys(temporaryStates.value.酒馆区域).forEach(regionName => {
+      temporaryStates.value.酒馆区域[regionName] = (temporaryStates.value.酒馆区域[regionName] ?? []).filter(state => state.维持项ID !== entry.id);
+    });
+  }
+
   function upsertMaintainedTemporaryState(entry: TavernMaintenanceEntry, formula: TavernStateFormula) {
     const list = temporaryStates.value.酒馆区域[formula.targetRegion] ?? [];
     const durationTurns = maintenanceDurationTurns(formula);
@@ -6143,13 +6185,22 @@ export const useGameStore = defineStore('primordia', () => {
     });
   }
 
-  function agreementCadenceIntervalDays(cadence: BusinessAgreement['cadence']) {
+  function agreementCadenceIntervalDays(cadence: BusinessAgreement['cadence'], intervalDays?: number) {
+    const customInterval = Math.floor(Number(intervalDays) || 0);
+    if (customInterval > 0) return customInterval;
     return cadence === 'weekly' ? 7 : 1;
   }
 
   function normalizeAgreementCadenceValue(value: unknown, fallbackText = ''): BusinessAgreement['cadence'] {
     const text = `${String(value ?? '')} ${fallbackText}`.toLowerCase();
     return /weekly|week|每周|一周|市日|周/.test(text) ? 'weekly' : 'daily';
+  }
+
+  function normalizeAgreementIntervalDays(value: unknown, cadence: BusinessAgreement['cadence']) {
+    const text = String(value ?? '').trim();
+    const explicit = text.match(/每\s*(\d{1,3})\s*天/);
+    if (explicit) return Math.max(1, Math.floor(Number(explicit[1]) || 1));
+    return agreementCadenceIntervalDays(cadence);
   }
 
   function normalizeAgreementReminder(reminder: string, cadence: BusinessAgreement['cadence']) {
@@ -6203,10 +6254,14 @@ export const useGameStore = defineStore('primordia', () => {
     dueDaySerial: number;
     prompt: string;
     missedPolicy: BusinessAgreementEventRule['missedPolicy'];
+    nextDateText: string;
+    lastDateText: string;
+    moneyText: string;
+    inventoryText: string;
+    failurePolicy: string;
   }
 
   function dueBusinessAgreementEvents() {
-    return [] as DueBusinessAgreementEvent[];
     if (!hasReadableCalendar.value) return [] as DueBusinessAgreementEvent[];
     const today = currentCalendarDay();
     const nowMinute = clockToMinutes(calendar.clock);
@@ -6226,6 +6281,13 @@ export const useGameStore = defineStore('primordia', () => {
           ? `${rule.prompt}（这是此前到期的长期经营安排，请按已经发生过来承接。）`
           : rule.prompt,
         missedPolicy: rule.missedPolicy,
+        nextDateText: serialDayToAgreementDate(agreement.nextDueDaySerial + agreementCadenceIntervalDays(agreement.cadence, agreement.intervalDays)),
+        lastDateText: serialDayToAgreementDate(agreement.nextDueDaySerial),
+        moneyText: agreement.cashboxDeltaCopper ? `钱匣 ${agreement.cashboxDeltaCopper > 0 ? '+' : ''}${agreement.cashboxDeltaCopper}铜` : '无',
+        inventoryText: agreement.inventoryChanges.length
+          ? agreement.inventoryChanges.map(item => `库房.${item.category}.${item.name}:${item.qty > 0 ? '+' : ''}${item.qty}`).join('、')
+          : '无',
+        failurePolicy: agreement.failurePolicy || '余额不足暂停',
       }];
     });
   }
@@ -6233,9 +6295,18 @@ export const useGameStore = defineStore('primordia', () => {
   function formatBusinessAgreementEventPromptBlock(events: DueBusinessAgreementEvent[]) {
     if (!events.length) return '';
     return [
-      '【本回合经营长期安排事件】',
-      ...events.map(event => `- ${event.prompt}`),
-      '这些是前端按长期经营安排、日期、时间和场景判定出的剧情提示；请自然承接，不要重复计算资金或库存。',
+      '【到期经营约定】',
+      '以下经营约定已到执行时间。前端会按经营附录结算钱匣与库房；请在正文中自然简短带过，不要重复计算资金或库存，也不要把本段标题写进正文。',
+      ...events.map(event =>
+        [
+          `- ${event.agreementName}`,
+          `  扣款: ${event.moneyText}`,
+          `  入库: ${event.inventoryText}`,
+          `  执行后更新: 上次 ${event.lastDateText}；下次 ${event.nextDateText}`,
+          `  失败: ${event.failurePolicy}`,
+          `  叙事提示: ${event.prompt}`,
+        ].join('\n'),
+      ),
     ].join('\n');
   }
 
@@ -6268,7 +6339,9 @@ export const useGameStore = defineStore('primordia', () => {
     const today = currentCalendarDay();
     businessAgreements.value.forEach(agreement => {
       if (!agreement.enabled || agreement.nextDueDaySerial > today) return;
-      const intervalDays = agreementCadenceIntervalDays(agreement.cadence);
+      const dueMinute = clockToMinutes(agreement.eventRule?.triggerTime || '00:00');
+      if (agreement.nextDueDaySerial === today && clockToMinutes(calendar.clock) < dueMinute) return;
+      const intervalDays = agreementCadenceIntervalDays(agreement.cadence, agreement.intervalDays);
       const dueOccurrences = Math.floor(Math.max(0, today - agreement.nextDueDaySerial) / intervalDays) + 1;
       let successCount = 0;
       let skippedCount = 0;
@@ -6280,7 +6353,9 @@ export const useGameStore = defineStore('primordia', () => {
         const enoughInventory = canApplyAgreementInventory(agreement.inventoryChanges);
         if (!enoughMoney || !enoughInventory) {
           skippedCount += 1;
-          addSettlementRecord({ id: recordId, sourceType: 'agreement', sourceId: agreement.id, turn, daySerial: dueDay, status: 'skipped', moneyDeltaCopper: 0, inventoryChanges: [], text: `${agreement.name}未履行：${!enoughMoney ? '钱匣余额不足' : '约定物资不足'}。`, createdAt: Date.now() });
+          const failedReason = !enoughMoney ? '钱匣余额不足' : '约定物资不足';
+          if (/暂停|停用|停止/.test(agreement.failurePolicy || '')) agreement.enabled = false;
+          addSettlementRecord({ id: recordId, sourceType: 'agreement', sourceId: agreement.id, turn, daySerial: dueDay, status: 'skipped', moneyDeltaCopper: 0, inventoryChanges: [], text: `${agreement.name}未履行：${failedReason}；${agreement.failurePolicy || '余额不足暂停'}。`, createdAt: Date.now() });
           continue;
         }
         cashboxCopper.value = normalizeCopperValue(cashboxCopper.value + agreement.cashboxDeltaCopper);
@@ -6453,37 +6528,81 @@ export const useGameStore = defineStore('primordia', () => {
     return changed;
   }
 
+  function normalizeAgreementMatchText(value: string, counterparty = '') {
+    return value
+      .replace(counterparty, '')
+      .replace(/每天|每日|每周|每月|每\d{1,3}天|周一|周二|周三|周四|周五|周六|周日|星期[一二三四五六日天]/g, '')
+      .replace(/[^\p{L}\p{N}]/gu, '')
+      .toLowerCase();
+  }
+
+  function findBusinessAgreementIndexForUpdate(update: ParsedBusinessAgreementUpdate, inventoryChanges: BusinessAgreementInventoryChange[]) {
+    if (update.id) {
+      const idIndex = businessAgreements.value.findIndex(item => item.id === update.id);
+      if (idIndex >= 0) return idIndex;
+    }
+    const exactIndex = businessAgreements.value.findIndex(item => item.name === update.name && item.counterparty === update.counterparty);
+    if (exactIndex >= 0) return exactIndex;
+    const updateNameKey = normalizeAgreementMatchText(update.name, update.counterparty);
+    const updateInventoryNames = new Set(inventoryChanges.map(item => normalizeAgreementMatchText(item.name)).filter(Boolean));
+    return businessAgreements.value.findIndex(item => {
+      if (item.counterparty !== update.counterparty || item.kind !== update.kind) return false;
+      const itemNameKey = normalizeAgreementMatchText(item.name, item.counterparty);
+      if (updateNameKey && itemNameKey && (updateNameKey.includes(itemNameKey) || itemNameKey.includes(updateNameKey))) return true;
+      return item.inventoryChanges.some(change => updateInventoryNames.has(normalizeAgreementMatchText(change.name)));
+    });
+  }
+
   function applyBusinessAgreementUpdates(updates: ParsedBusinessAgreementUpdate[] | undefined) {
     if (!updates?.length) return false;
     let changed = false;
     updates.forEach(update => {
-      const index = businessAgreements.value.findIndex(item => item.id === update.id || (item.name === update.name && item.counterparty === update.counterparty));
+      const inventoryChanges = update.inventoryChanges.map(item => ({ ...item, category: normalizeInventoryCategory(item.category) }));
+      const index = findBusinessAgreementIndexForUpdate(update, inventoryChanges);
       if (update.action === 'cancel') {
         if (index >= 0) businessAgreements.value[index].enabled = false;
         changed ||= index >= 0;
         return;
       }
       const cadence = normalizeAgreementCadenceValue(update.cadence, `${update.name} ${update.reminder}`);
-      const inventoryChanges = update.inventoryChanges.map(item => ({ ...item, category: normalizeInventoryCategory(item.category) }));
-      const eventRule = normalizeAgreementEventRule(update.eventRule, {
+      const intervalDays = Math.max(
+        1,
+        Math.floor(Number(update.intervalDays) || normalizeAgreementIntervalDays(update.intervalDays ?? update.cadence, cadence)),
+      );
+      const parsedNextDue = parseAgreementDateText(update.nextDueText);
+      const parsedLastSettled = parseAgreementDateText(update.lastSettledText);
+      let eventRule = normalizeAgreementEventRule(update.eventRule, {
         kind: update.kind,
         name: update.name,
         counterparty: update.counterparty,
         inventoryChanges,
       }, index >= 0 ? businessAgreements.value[index].eventRule : undefined);
+      if (parsedNextDue?.time) {
+        eventRule = eventRule
+          ? { ...eventRule, triggerTime: parsedNextDue.time }
+          : { enabled: false, prompt: '', triggerTime: parsedNextDue.time, scene: 'tavern', missedPolicy: 'past' };
+      }
       const next: BusinessAgreement = {
         id: index >= 0 ? businessAgreements.value[index].id : update.id || `agreement-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         kind: update.kind,
         name: update.name,
         counterparty: update.counterparty,
-        enabled: true,
+        enabled: update.status ? !/暂停|停用|取消|删除|结束/.test(update.status) : true,
         cadence,
+        intervalDays,
         cashboxDeltaCopper: update.cashboxDeltaCopper,
         inventoryChanges,
         reminder: normalizeAgreementReminder(update.reminder, cadence),
+        failurePolicy: update.failurePolicy || businessAgreements.value[index]?.failurePolicy || '余额不足暂停',
         ...(eventRule ? { eventRule } : {}),
-        nextDueDaySerial: index >= 0 ? businessAgreements.value[index].nextDueDaySerial : currentCalendarDay() + 1,
-        ...(index >= 0 && businessAgreements.value[index].lastSettledDaySerial !== undefined ? { lastSettledDaySerial: businessAgreements.value[index].lastSettledDaySerial } : {}),
+        nextDueDaySerial:
+          parsedNextDue?.daySerial ??
+          (index >= 0 ? businessAgreements.value[index].nextDueDaySerial : currentCalendarDay() + intervalDays),
+        ...(parsedLastSettled?.daySerial !== undefined
+          ? { lastSettledDaySerial: parsedLastSettled.daySerial }
+          : index >= 0 && businessAgreements.value[index].lastSettledDaySerial !== undefined
+            ? { lastSettledDaySerial: businessAgreements.value[index].lastSettledDaySerial }
+            : {}),
       };
       if (index >= 0) businessAgreements.value[index] = next;
       else businessAgreements.value.unshift(next);
@@ -6509,7 +6628,37 @@ export const useGameStore = defineStore('primordia', () => {
     entry.status = enabled ? 'active' : 'disabled';
     entry.pauseReason = undefined;
     if (enabled && formula?.requirements.length) upsertMaintainedTemporaryState(entry, formula);
-    else entry.remainingTurns = undefined;
+    else {
+      removeMaintainedTemporaryState(entry);
+      entry.remainingTurns = undefined;
+    }
+    markLocalStateDirty();
+    void writeChatSave();
+  }
+
+  function setTavernStateFormulaMaintenanceEnabled(formulaId: string, enabled: boolean) {
+    const formula = tavernStateFormulas.value.find(item => item.id === formulaId);
+    if (!formula) return;
+    let entry = tavernMaintenance.value.find(item => item.formulaId === formula.id);
+    if (!entry) {
+      entry = {
+        id: `maint-${formula.id}`,
+        formulaId: formula.id,
+        enabled: false,
+        status: 'disabled',
+        lastSettledTurn: turn.value,
+        pauseReason: formula.requirements.length ? undefined : '等待确认区域或维护物品',
+      };
+      tavernMaintenance.value.unshift(entry);
+    }
+    setMaintenanceEnabled(entry.id, enabled);
+  }
+
+  function deleteTavernMaintenance(id: string) {
+    const entry = tavernMaintenance.value.find(item => item.id === id);
+    if (!entry) return;
+    removeMaintainedTemporaryState(entry);
+    tavernMaintenance.value = tavernMaintenance.value.filter(item => item.id !== id);
     markLocalStateDirty();
     void writeChatSave();
   }
@@ -6754,6 +6903,10 @@ export const useGameStore = defineStore('primordia', () => {
       const kindText = String(record.kind || 'wage');
       const kind: BusinessAgreement['kind'] = kindText === 'rent' || kindText === 'delivery' || kindText === 'sideBusiness' ? kindText : 'wage';
       const cadence = normalizeAgreementCadenceValue(record.cadence, `${name} ${String(record.reminder || '')}`);
+      const intervalDays = Math.max(
+        1,
+        Math.floor(Number(record.intervalDays) || normalizeAgreementIntervalDays(record.cadence, cadence)),
+      );
       const inventoryChanges = (Array.isArray(record.inventoryChanges) ? record.inventoryChanges : []).map(change => {
         const source = asRecord(change);
         return {
@@ -6771,9 +6924,11 @@ export const useGameStore = defineStore('primordia', () => {
         counterparty,
         enabled: record.enabled !== false,
         cadence,
+        intervalDays,
         cashboxDeltaCopper: Math.trunc(Number(record.cashboxDeltaCopper) || 0),
         inventoryChanges,
         reminder: normalizeAgreementReminder(String(record.reminder || name), cadence),
+        failurePolicy: String(record.failurePolicy || '余额不足暂停'),
         ...(eventRule ? { eventRule } : {}),
         nextDueDaySerial: Math.max(0, Math.floor(Number(record.nextDueDaySerial) || currentCalendarDay() + 1)),
         ...(Number.isFinite(Number(record.lastSettledDaySerial)) ? { lastSettledDaySerial: Math.max(0, Math.floor(Number(record.lastSettledDaySerial))) } : {}),
@@ -7370,6 +7525,47 @@ export const useGameStore = defineStore('primordia', () => {
     markLocalStateDirty();
     void writeChatSave();
     return { ok: true as const, message: '制作完成。', shortages: [] as ReturnType<typeof recipeShortages> };
+  }
+
+  function queueRecipeCraftDraft(recipeId: string, copies = 1) {
+    const recipe = recipes.value.find(entry => entry.id === recipeId);
+    if (!recipe) return { ok: false as const, message: '没有找到这条配方。', shortages: [] as ReturnType<typeof recipeShortages> };
+    const safeCopies = Math.max(1, Math.floor(Number(copies) || 1));
+    const shortages = recipeShortages(recipe, safeCopies);
+    if (shortages.length) {
+      pushLog('提示', `配方材料不足 · ${recipe.name}`, { source: 'engine', authoritative: true, tone: 'amber' });
+      return { ok: false as const, message: '材料不足。', shortages };
+    }
+
+    const materialText = recipe.ingredients
+      .map(ingredient => {
+        const tags = ingredient.tags.length ? `；${ingredient.tags.join('、')}` : '';
+        return `${ingredient.name}×${ingredient.qty * safeCopies}份（${ingredient.category}${tags}）`;
+      })
+      .join('、');
+    const outputTags = recipe.outputTags.length ? `；${recipe.outputTags.join('、')}` : '';
+    const qualityText = recipe.outputQuality ? `；${recipe.outputQuality}` : '';
+    const priceText = recipe.outputPriceCopper ? `；参考价${formatCopper(recipe.outputPriceCopper)}` : '';
+    const outputText = `${recipe.outputName}×${recipe.yieldQty * safeCopies}份（${recipe.outputCategory}${outputTags}${qualityText}${priceText}）`;
+    const actionText = `玩家按配方复做「${recipe.name}」${safeCopies}次：消耗 ${materialText}，制作 ${outputText}。`;
+    appendDraft(actionText, {
+      type: 'COOK_DISH',
+      aiHint: [
+        '本回合是按前端配方簿复做已保存成品，不需要重新命名菜品，也不要输出 <craft_result>。',
+        `请自然叙述复做过程；已知产物是 ${outputText}。`,
+        `已知消耗材料是 ${materialText}。`,
+        '不要重新计算材料、价格、随身钱袋或钱匣；如果需要承接库存变化，只按玩家本回合行动中的数量理解。',
+      ].join('\n'),
+    });
+    pushLog('提示', `配方复做已加入行动草稿 · ${recipe.name} ×${safeCopies}`, {
+      source: 'engine',
+      authoritative: true,
+      tone: 'cyan',
+      actionType: 'COOK_DISH',
+    });
+    markLocalStateDirty();
+    void writeChatSave();
+    return { ok: true as const, message: '已加入行动草稿。', shortages: [] as ReturnType<typeof recipeShortages> };
   }
 
   function deleteRecipe(recipeId: string) {
@@ -8568,6 +8764,15 @@ export const useGameStore = defineStore('primordia', () => {
 
   function buildCurrentScenePrompt(actionText: string) {
     return buildNarrationPrompt({ userText: actionText });
+  }
+
+  function hasFullNarrationPromptSections(prompt: string) {
+    return /【叙述者权限边界】|【当前权威局势】|【交互上下文】|【输出格式】/.test(prompt);
+  }
+
+  function unwrapPlayerActionBlock(prompt: string) {
+    const match = prompt.match(/<玩家本回合行动>\s*([\s\S]*?)\s*<\/玩家本回合行动>/);
+    return (match?.[1] ?? prompt).trim();
   }
 
   function buildFrontendMvuSnapshot(lastActionSummary = ''): PrimordiaStatData {
@@ -10918,18 +11123,46 @@ export const useGameStore = defineStore('primordia', () => {
     return match ? Math.max(1, Number(match[1])) : undefined;
   }
 
-  function applyFarmBrewFromMvuData(data: PrimordiaStatData) {
-    const farmRoot = readRecordPath(data, ['农田与酒窖.农田', '农田.田畦', '农田']);
-    let changed = false;
+  function hashFarmPlotKey(key: string) {
+    let hash = 0;
+    for (let index = 0; index < key.length; index += 1) {
+      hash = (hash * 31 + key.charCodeAt(index)) >>> 0;
+    }
+    return hash.toString(36);
+  }
 
-    for (const [key, raw] of Object.entries(farmRoot)) {
+  function farmPlotIdFromKey(key: string, fallbackIndex: number) {
+    const index = plotIndexFromKey(key);
+    if (index) return `f-${index}`;
+    const normalized = key.trim() || `田畦${fallbackIndex}`;
+    return `f-key-${hashFarmPlotKey(normalized)}`;
+  }
+
+  function inferFarmPlotStage(status: string, crop: string, stageMax: number) {
+    const text = `${status} ${crop}`;
+    if (!crop || /空畦|未种|无|荒/.test(text)) return 0;
+    if (/成熟|可收|收获/.test(text)) return stageMax;
+    if (/将熟|临近/.test(text)) return Math.max(1, stageMax - 1);
+    if (/抽穗|开花|挂果/.test(text)) return Math.max(1, Math.min(stageMax - 1, Math.round(stageMax * 0.75)));
+    if (/生长|抽枝|发芽|初芽|已播种|新播种|幼苗/.test(text)) return Math.max(1, Math.round(stageMax * 0.35));
+    return crop === '空畦' ? 0 : 1;
+  }
+
+  function applyFarmBrewFromMvuData(data: PrimordiaStatData) {
+    const rawFarmRoot = readFirstPath<any>(data, ['农田与酒窖.农田', '农田.田畦', '农田'], undefined);
+    const farmRoot = asRecord(rawFarmRoot);
+    let changed = false;
+    const seenFarmPlotIds = new Set<string>();
+
+    for (const [entryIndex, [key, raw]] of Object.entries(farmRoot).entries()) {
       const record = asRecord(raw);
-      const index = plotIndexFromKey(key);
-      if (!index) continue;
-      let plot = farmPlots.value.find(item => item.id === `f-${index}`);
+      const plotId = farmPlotIdFromKey(key, entryIndex + 1);
+      seenFarmPlotIds.add(plotId);
+      let plot = farmPlots.value.find(item => item.id === plotId);
       if (!plot) {
         plot = {
-          id: `f-${index}`,
+          id: plotId,
+          label: key,
           crop: '空畦',
           stage: 0,
           stageMax: 5,
@@ -10939,11 +11172,12 @@ export const useGameStore = defineStore('primordia', () => {
         };
         farmPlots.value.push(plot);
       }
+      plot.label = String(readFirstPath(record, ['名称', '田畦名', '地块名', 'label', 'name'], key) || key).trim();
 
       const rawCrop = readFirstPath<any>(record, ['作物', 'crop'], undefined);
       const crop = rawCrop === undefined || rawCrop === null ? undefined : String(rawCrop).trim();
       const status = String(readFirstPath(record, ['状态', 'season'], '') || '').trim();
-      const expectedHarvest = String(readFirstPath(record, ['预计产出', 'expectedHarvest'], '') || '').trim();
+      const expectedHarvest = String(readFirstPath(record, ['预计产出', '预计收获', '收获', '产出', 'expectedHarvest'], '') || '').trim();
       const plantedDay = dayNumberFromValue(readFirstPath(record, ['播种日', 'plantedDay'], undefined), plot.plantedDay);
       const matureDay = dayNumberFromValue(readFirstPath(record, ['收获日', '成熟日', 'matureDay'], undefined), plot.matureDay);
       const stage = readNumberPath(record, ['阶段', 'stage'], undefined);
@@ -10957,9 +11191,17 @@ export const useGameStore = defineStore('primordia', () => {
       if (matureDay !== undefined) plot.matureDay = matureDay;
       if (stageMax !== undefined) plot.stageMax = Math.max(1, Math.floor(stageMax));
       if (stage !== undefined) plot.stage = Math.max(0, Math.min(plot.stageMax, Math.floor(stage)));
+      else if (status || crop !== undefined) plot.stage = inferFarmPlotStage(plot.season, plot.crop, plot.stageMax);
       if (Array.isArray(batchTagsRaw)) plot.batchTags = batchTagsRaw.map(tag => String(tag).trim()).filter(Boolean);
       else if (typeof batchTagsRaw === 'string') plot.batchTags = batchTagsRaw.split(/[、,，]/).map(tag => tag.trim()).filter(Boolean);
       changed = true;
+    }
+    if (rawFarmRoot && typeof rawFarmRoot === 'object' && !Array.isArray(rawFarmRoot)) {
+      const nextPlots = farmPlots.value.filter(plot => seenFarmPlotIds.has(plot.id));
+      if (nextPlots.length !== farmPlots.value.length) {
+        farmPlots.value = nextPlots;
+        changed = true;
+      }
     }
 
     const brewRoot = readRecordPath(data, ['农田与酒窖.酒窖桶', '农田与酒窖.酒窖', '酒窖桶', '酒窖']);
@@ -12159,8 +12401,17 @@ export const useGameStore = defineStore('primordia', () => {
       const operationsSummaries = settleOperationsForTurn(completedTurnTarget);
       operationsChanged = operationsSummaries.length > 0;
       const duePromiseMemoIds = duePromiseMemosForTurn.map(memo => memo.id);
+      const normalizedScenePrompt = hasFullNarrationPromptSections(scenePrompt)
+        ? scenePrompt
+        : buildNarrationPrompt({
+            userText: `<user>${unwrapPlayerActionBlock(scenePrompt || combined)}</user>`,
+            actionTitle: '玩家本回合行动',
+            npcActivityPlan: options.npcActivityPlan ?? null,
+            backgroundFlowPlan: options.backgroundFlowPlan ?? null,
+            businessVisitorPlan: options.businessVisitorPlan ?? null,
+          });
       const operationsBlock = formatOperationsPromptBlock(operationsSummaries);
-      const promptWithOperations = operationsBlock ? `${scenePrompt}\n\n${operationsBlock}` : scenePrompt;
+      const promptWithOperations = operationsBlock ? `${normalizedScenePrompt}\n\n${operationsBlock}` : normalizedScenePrompt;
       const promptWithBusinessAgreementEvents = appendBusinessAgreementEventPromptBlock(promptWithOperations, businessAgreementEventsForTurn);
       const promptWithCharacterVisits = appendCharacterVisitPromptBlock(promptWithBusinessAgreementEvents, characterVisitEventsForTurn);
       const scenePromptForRequest = appendDuePromiseMemoBlock(promptWithCharacterVisits, duePromiseMemosForTurn);
@@ -12689,8 +12940,11 @@ export const useGameStore = defineStore('primordia', () => {
     recipeIngredientAvailablePortions,
     recipeShortages,
     craftRecipe,
+    queueRecipeCraftDraft,
     deleteRecipe,
     setMaintenanceEnabled,
+    setTavernStateFormulaMaintenanceEnabled,
+    deleteTavernMaintenance,
     setTavernStateFormulaRegion,
     setBusinessAgreementEnabled,
     updateBusinessAgreementEventRule,

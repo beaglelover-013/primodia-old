@@ -73,15 +73,17 @@ const PRESET_CHARACTER_CG: Record<string, Partial<Record<'sfw' | 'nsfw', PresetC
   橘柒: {
     sfw: presetCg(
       [
-        'https://files.catbox.moe/0ld4p2.png',
-        'https://files.catbox.moe/21zsbn.png',
         'https://files.catbox.moe/ckq34r.png',
       ],
       '橘柒预设 CG。',
     ),
     nsfw: presetCg(
       [
-        'https://files.catbox.moe/3gz9ht.png',
+        'https://files.catbox.moe/g2nkel.png',
+        'https://files.catbox.moe/15vxdq.png',
+        'https://files.catbox.moe/gcncgz.png',
+        'https://files.catbox.moe/twf1du.png',
+        'https://files.catbox.moe/ptd7v5.png',
       ],
       '橘柒 NSFW CG。',
     ),
@@ -89,12 +91,11 @@ const PRESET_CHARACTER_CG: Record<string, Partial<Record<'sfw' | 'nsfw', PresetC
   绵暖: {
     sfw: presetCg(
       [
-        'https://files.catbox.moe/j42erz.png',
         'https://files.catbox.moe/re3z5a.png',
       ],
       '绵暖预设 CG。',
     ),
-    nsfw: presetCg([], '绵暖 NSFW CG。'),
+    nsfw: presetCg(['https://files.catbox.moe/l0x7c1.png'], '绵暖 NSFW CG。'),
   },
   翠萱: {
     sfw: presetCg(['https://files.catbox.moe/t2r08i.png'], '翠萱预设 CG。'),
@@ -102,17 +103,24 @@ const PRESET_CHARACTER_CG: Record<string, Partial<Record<'sfw' | 'nsfw', PresetC
   莲洵: {
     sfw: presetCg(
       [
+        'https://files.catbox.moe/pp87ey.png',
+        'https://files.catbox.moe/8pdsvy.png',
+        'https://files.catbox.moe/9wxuol.png',
       ],
       '莲洵预设 CG。',
     ),
     nsfw: presetCg(
-      ['https://files.catbox.moe/4gt866.png', 'https://files.catbox.moe/pl47i5.png'],
+      ['https://files.catbox.moe/4gt866.png', 'https://files.catbox.moe/pl47i5.png', 'https://files.catbox.moe/qaacjb.png'],
       '莲洵 NSFW CG。',
     ),
   },
   莲沁: {
     sfw: presetCg(
       [
+        'https://files.catbox.moe/pp87ey.png',
+        'https://files.catbox.moe/mnvfpe.png',
+        'https://files.catbox.moe/w5j70y.png',
+        'https://files.catbox.moe/u98nm9.png',
       ],
       '莲沁预设 CG。',
     ),
@@ -124,6 +132,8 @@ const PRESET_CHARACTER_CG: Record<string, Partial<Record<'sfw' | 'nsfw', PresetC
   阿黛拉: {
     sfw: presetCg(
       [
+        'https://files.catbox.moe/uxjy2o.png',
+        'https://files.catbox.moe/jv6q47.png',
       ],
       '阿黛拉预设 CG。',
     ),

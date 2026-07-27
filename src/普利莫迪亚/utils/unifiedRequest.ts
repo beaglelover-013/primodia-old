@@ -578,6 +578,53 @@ function decodeEscapedStoryText(content: string) {
     .replace(/\\'/g, "'");
 }
 
+function extractEmbeddedStoryTextFields(content: string): string[] {
+  const found: string[] = [];
+  const push = (value: unknown) => {
+    if (typeof value !== 'string') return;
+    const text = value.trim();
+    if (!text) return;
+    if (/<(?:maintext|NARRATIVE|shop|craft_result|guest_update|regular_guest_update|rumor_record|promise_update|tavern_state_update|business_agreement_update|character_behavior_update|UpdateVariable|JSONPatch)\b/i.test(text)) {
+      found.push(text);
+    }
+  };
+  const walk = (value: unknown, depth = 0) => {
+    if (depth > 4 || value === null || value === undefined) return;
+    if (typeof value === 'string') {
+      push(value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach(item => walk(item, depth + 1));
+      return;
+    }
+    if (typeof value === 'object') {
+      Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
+        if (/^(?:normalizedMessage|message|fullMessage|content|text|output|raw|response)$/i.test(key)) push(item);
+        walk(item, depth + 1);
+      });
+    }
+  };
+
+  for (const source of [content, decodeHtmlEntities(content), decodeEscapedStoryText(content), decodeEscapedStoryText(decodeHtmlEntities(content))]) {
+    try {
+      walk(JSON.parse(source));
+    } catch {
+      // Not a JSON wrapper; regex extraction below covers common debug blobs.
+    }
+    const regex = /["'](?:normalizedMessage|message|fullMessage|content|text|output|raw|response)["']\s*:\s*("(?:\\.|[^"\\])*")/gi;
+    for (const match of source.matchAll(regex)) {
+      try {
+        push(JSON.parse(match[1]));
+      } catch {
+        push(decodeEscapedStoryText(match[1] ?? ''));
+      }
+    }
+  }
+
+  return found;
+}
+
 function storyTextScanVariants(content: string) {
   const variants: string[] = [];
   const seen = new Set<string>();
@@ -591,6 +638,12 @@ function storyTextScanVariants(content: string) {
   add(decodeHtmlEntities(content));
   add(decodeEscapedStoryText(content));
   add(decodeEscapedStoryText(decodeHtmlEntities(content)));
+  for (const embedded of extractEmbeddedStoryTextFields(content)) {
+    add(embedded);
+    add(decodeHtmlEntities(embedded));
+    add(decodeEscapedStoryText(embedded));
+    add(decodeEscapedStoryText(decodeHtmlEntities(embedded)));
+  }
 
   return variants;
 }
@@ -599,6 +652,32 @@ function extractLastTag(content: string, tagName: string): string {
   const regex = new RegExp(`<${tagName}\\b[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'gi');
   const matches = storyTextScanVariants(content).flatMap(source => [...source.matchAll(regex)]);
   return matches.at(-1)?.[1]?.trim() ?? '';
+}
+
+function extractEmbeddedNormalizedMessages(content: string): string[] {
+  const found: string[] = [];
+  const pending = [content];
+  const seen = new Set<string>(pending);
+
+  for (let depth = 0; depth < 3 && pending.length > 0; depth += 1) {
+    const round = pending.splice(0);
+    for (const source of round) {
+      const regex = /["']normalizedMessage["']\s*:\s*("(?:\\.|[^"\\])*")/g;
+      for (const match of source.matchAll(regex)) {
+        try {
+          const decoded = JSON.parse(match[1]) as string;
+          if (!decoded || seen.has(decoded)) continue;
+          seen.add(decoded);
+          found.push(decoded);
+          pending.push(decoded);
+        } catch {
+          // Ignore incomplete debug wrappers.
+        }
+      }
+    }
+  }
+
+  return found;
 }
 
 async function readBaseMvuData(): Promise<Record<string, any>> {
@@ -639,7 +718,11 @@ function normalizeAssistantMessage(raw: string): {
   mvuMessage: string;
   latest: LatestMaintextPayload;
 } {
-  const cleaned = stripThinkingBlocks(raw);
+  const embeddedMessages = [
+    ...extractEmbeddedNormalizedMessages(raw),
+    ...extractEmbeddedStoryTextFields(raw),
+  ];
+  const cleaned = stripThinkingBlocks([raw, ...embeddedMessages].filter(Boolean).join('\n\n'));
   const craftResult = extractLastTag(cleaned, 'craft_result');
   const guestUpdate = extractLastTag(cleaned, 'guest_update');
   const regularGuestUpdate = extractLastTag(cleaned, 'regular_guest_update');
@@ -758,12 +841,12 @@ function messageHasVariablePatch(message: string): boolean {
 
 function messageHasTopLevelPatch(message: string, topLevelName: string): boolean {
   const escaped = topLevelName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const text = message || '';
-  return [
+  const patterns = [
     new RegExp(`["']?path["']?\\s*:\\s*["']/stat_data/${escaped}(?:/|["'])`),
     new RegExp(`["']?path["']?\\s*:\\s*["']/${escaped}(?:/|["'])`),
     new RegExp(`${escaped}\\.`),
-  ].some(pattern => pattern.test(text));
+  ];
+  return storyTextScanVariants(message || '').some(text => patterns.some(pattern => pattern.test(text)));
 }
 
 async function parseMvuData(message: string, baseData: Record<string, any>): Promise<Record<string, any>> {
@@ -851,7 +934,7 @@ function writeGaugeCurrent(data: Record<string, any>, topLevel: string, gauge: s
 }
 
 function extractJsonPatchOperations(message: string): Array<Record<string, any>> {
-  const patchText = extractEmbeddedJsonPatch(message);
+  const patchText = cleanJsonPatchText(extractEmbeddedJsonPatch(message));
   if (!patchText) return [];
   try {
     const parsed = JSON.parse(patchText);
@@ -1199,8 +1282,35 @@ function extractEmbeddedJsonPatch(message: string): string {
   return '';
 }
 
+function cleanJsonPatchText(patchText: string): string {
+  const trimJsonArray = (value: string) => {
+    const cleaned = value
+      .replace(/^```(?:json)?/i, '')
+      .replace(/```$/i, '')
+      .trim();
+    const firstArray = cleaned.indexOf('[');
+    const lastArray = cleaned.lastIndexOf(']');
+    if (firstArray >= 0 && lastArray > firstArray) return cleaned.slice(firstArray, lastArray + 1).trim();
+    return cleaned;
+  };
+
+  const variants = storyTextScanVariants(patchText).map(trimJsonArray);
+  const seen = new Set<string>();
+  for (const variant of variants) {
+    if (!variant || seen.has(variant)) continue;
+    seen.add(variant);
+    try {
+      JSON.parse(variant);
+      return variant;
+    } catch {
+      // Keep trying decoded variants before falling back.
+    }
+  }
+  return trimJsonArray(patchText);
+}
+
 function applyEmbeddedJsonPatch(message: string, baseData: Record<string, any>): Record<string, any> {
-  const patchText = extractEmbeddedJsonPatch(message);
+  const patchText = cleanJsonPatchText(extractEmbeddedJsonPatch(message));
   if (!patchText) return baseData;
   try {
     const operations = JSON.parse(patchText);

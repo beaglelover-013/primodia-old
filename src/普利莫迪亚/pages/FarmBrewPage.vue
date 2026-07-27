@@ -27,54 +27,8 @@ watch(
   },
 );
 
-const harvestTagPools = {
-  vegetable: ['清甜', '水润', '紧实', '青味重', '辛烈', '泥土香', '易焦糖化', '苦涩', '水感', '香气集中'],
-  fruit: ['果香浓', '酸甜', '清甜', '水润', '酒香', '涩感', '过熟', '发酵香', '蜜甜', '皮苦'],
-  meat: ['脂肪丰厚', '肉质紧实', '肉质细嫩', '肉香浓', '野味重', '腥味轻', '腥味重', '血铁味', '柴硬', '厚鲜'],
-  dairy: ['蛋香浓', '腥味轻', '蛋腥', '奶香厚', '脂感强', '清淡', '柔滑', '发酵酸', '陈香', '水感重'],
-  strange: ['鱼鲜', '肉汤感', '烟熏香', '奶香', '酒香', '海潮气', '灶火余味', '菌菇香', '血铁味', '草本香'],
-};
-
-function pickFrom<T>(items: T[]) {
-  return items[Math.floor(Math.random() * items.length)];
-}
-
-function harvestPool(crop: string) {
-  if (/果|莓|梨|苹果|樱桃|柑|番茄/.test(crop)) return harvestTagPools.fruit;
-  if (/蛋|奶|酪|乳/.test(crop)) return harvestTagPools.dairy;
-  if (/肉|鸡|羊|猪|牛|鹿|兔/.test(crop)) return harvestTagPools.meat;
-  return harvestTagPools.vegetable;
-}
-
-function harvestTags(crop: string) {
-  const pool = Math.random() < 0.12 ? [...harvestPool(crop), ...harvestTagPools.strange] : harvestPool(crop);
-  const tags = new Set<string>();
-  tags.add(pickFrom(pool));
-  if (Math.random() < 0.18) tags.add(pickFrom(pool));
-  return [...tags].slice(0, 2);
-}
-
-function batchName(baseName: string, tags: string[]) {
-  if (!tags.length) return baseName;
-  return `${tags.join('')}${baseName}`;
-}
-
 function cropFromSeed(seedName: string) {
   return seedName.replace(/种子|籽|小包|一袋|一把/g, '').trim() || seedName;
-}
-
-function expectedForCrop(crop: string) {
-  if (/南瓜|番茄|甜薯|芋|瓜/.test(crop)) return '收获 8 ~ 14 份';
-  if (/麦|稻|谷/.test(crop)) return '收获 40 ~ 60 束';
-  if (/香草|药草|薄荷|鼠尾草/.test(crop)) return '收获 12 ~ 20 把';
-  return '收获 10 ~ 18 份';
-}
-
-function expectedQty(text: string, fallback = 1) {
-  const nums = [...text.matchAll(/\d+/g)].map(match => Number(match[0]));
-  if (nums.length >= 2) return Math.max(1, Math.round((nums[0] + nums[1]) / 2));
-  if (nums.length === 1) return Math.max(1, nums[0]);
-  return fallback;
 }
 
 function dayLabel(dayNumber?: number) {
@@ -90,6 +44,10 @@ function stageHint(stage: number) {
   return ['空畦', '初芽', '抽枝', '抽穗', '将熟', '成熟'][Math.min(stage, 5)] ?? '生长中';
 }
 
+function plotLabel(plot: FarmPlot) {
+  return plot.label || (plot.id.startsWith('f-') && /^\d+$/.test(plot.id.slice(2)) ? `第${plot.id.slice(2)}号田畦` : '这块田畦');
+}
+
 function openSeedPicker(plot: FarmPlot) {
   seedPicker.plot = plot;
   seedPicker.open = true;
@@ -99,64 +57,21 @@ function plantPlot(seed: InventoryItem) {
   if (!seedPicker.plot || seed.qty <= 0) return;
   const plot = seedPicker.plot;
   const crop = cropFromSeed(seed.name);
-  const expectedHarvest = expectedForCrop(crop);
-  const result = game.dispatchAction({
-    type: 'FARM_PLANT',
-    plotId: plot.id,
-    seedId: seed.id,
-    crop,
-    expectedHarvest,
-    currentDay: currentDay.value,
-  });
-  if (!result.ok) {
-    game.pushLog('提示', result.message);
-    return;
-  }
-  game.appendDraft(`我在第${plot.id.slice(2)}号田畦播下「${seed.name}」，准备把它养成「${crop}」。预计${expectedHarvest}。（前端已结算：材料-1，田畦进入生长期。）`, { type: 'FARM_PLANT' });
-  game.pushLog('提示', `播种 · ${crop} 已结算并加入行动框。`);
+  game.appendDraft(`我在「${plotLabel(plot)}」播下「${seed.name}」，准备把它养成「${crop}」。请根据当前日期、天气、田畦条件和种植材料，在变量中写入播种日、成熟日、阶段、预计产出与材料消耗。`, { type: 'FARM_PLANT' });
+  game.pushLog('提示', `播种行动 · ${crop} 已加入行动框，等待 AI 写入变量。`);
   seedPicker.open = false;
 }
 
-function expandPlot() {
-  const result = game.dispatchAction({ type: 'FARM_EXPAND' });
-  if (!result.ok) {
-    game.pushLog('提示', result.message);
-    return;
-  }
-  game.appendDraft(`我在后院或当前农田空间开拓第${result.summary || game.farmPlots.length}号新田畦，清理土面、翻土并整理边界。（前端已结算：新增空畦。）`, { type: 'FARM_EXPAND' });
-  game.pushLog('提示', '开拓新畦已结算并加入行动框。');
-}
-
 function removePlot(plot: FarmPlot) {
-  const result = game.dispatchAction({ type: 'FARM_REMOVE', plotId: plot.id });
-  if (!result.ok) {
-    game.pushLog('提示', result.message);
-    return;
-  }
-  game.appendDraft(`我撤去第${plot.id.slice(2)}号田畦的「${plot.crop}」，整理土面和工具。（前端已结算：该空畦已撤去。）`, { type: 'FARM_REMOVE' });
-  game.pushLog('提示', `撤去田畦 · ${plot.crop} 已结算并加入行动框。`);
+  game.appendDraft(`我撤去「${plotLabel(plot)}」的「${plot.crop}」，整理土面和工具。请在变量中删除或清空这块田畦。`, { type: 'FARM_REMOVE' });
+  game.pushLog('提示', `撤去田畦行动 · ${plot.crop} 已加入行动框，等待 AI 写入变量。`);
 }
 
 function harvestPlot(plot: FarmPlot) {
   if (plot.stage < plot.stageMax) return;
-  const qty = expectedQty(plot.expectedHarvest, 8);
-  const tags = harvestTags(plot.crop);
-  const name = batchName(plot.crop, tags);
   const crop = plot.crop;
-  const result = game.dispatchAction({
-    type: 'FARM_HARVEST',
-    plotId: plot.id,
-    resultName: name,
-    quantity: qty,
-    tags,
-    priceCopper: 0,
-  });
-  if (!result.ok) {
-    game.pushLog('提示', result.message);
-    return;
-  }
-  game.appendDraft(`我收成第${plot.id.slice(2)}号田畦的「${crop}」，分拣后以「${name}」记入库房，共1批、约${qty}份，风味倾向为${tags.join('、') || '普通'}。（前端已结算：收成入库，田畦清空。）`, { type: 'FARM_HARVEST' });
-  game.pushLog('提示', `收成 · ${name} 已结算并加入行动框。`);
+  game.appendDraft(`我收成「${plotLabel(plot)}」的「${crop}」，分拣后送入库房。请根据田畦变量、天气与成熟状态，在变量中写入实际收获数量、批次标签、入库物品，并清空或更新田畦。`, { type: 'FARM_HARVEST' });
+  game.pushLog('提示', `收成行动 · ${crop} 已加入行动框，等待 AI 写入变量。`);
 }
 
 function brewProgress(barrel: BrewBarrel) {
@@ -218,18 +133,16 @@ function tapBrew(barrel: BrewBarrel) {
     <div class="pm-paper-body">
       <div class="pm-divider">— 农田 · 田畦展示 —</div>
       <div class="farm-actions">
-        <span class="pm-dim">种植材料来自库房；想种什么就选什么，前端只负责扣除 1 份并记录田畦。</span>
-        <button class="pm-btn sm" @click="expandPlot">
-          <PmIcon name="plus" :size="12" /> 开拓新畦
-        </button>
+        <span class="pm-dim">这里读取变量显示田畦。</span>
       </div>
 
       <div class="farm-grid pm-grid auto-sm">
         <article v-for="plot in game.farmPlots" :key="plot.id" class="farm-plot pm-card">
           <div class="plot-h">
-            <span class="plot-name">{{ plot.crop }}</span>
+            <span class="plot-name">{{ plot.label || plot.crop }}</span>
             <span class="pm-tag dim">{{ plot.season }}</span>
           </div>
+          <div v-if="plot.label && plot.crop && plot.label !== plot.crop" class="plot-crop pm-dim">{{ plot.crop }}</div>
           <div class="plot-stage">
             <span v-for="i in plot.stageMax" :key="i" class="stage-dot" :class="{ done: i <= plot.stage }"></span>
           </div>
@@ -237,7 +150,7 @@ function tapBrew(barrel: BrewBarrel) {
           <div v-if="plot.batchTags?.length" class="plot-tags">
             <span v-for="tag in plot.batchTags" :key="tag" class="pm-tag">{{ tag }}</span>
           </div>
-          <div class="plot-exp pm-dim">{{ plot.expectedHarvest }} · 入库为1批</div>
+          <div class="plot-exp pm-dim">{{ plot.expectedHarvest }}</div>
           <div v-if="plot.stage > 0" class="plot-dates">
             <span>播种 {{ dayLabel(plot.plantedDay) }}</span>
             <span>成熟 {{ dayLabel(plot.matureDay) }}</span>
@@ -304,7 +217,7 @@ function tapBrew(barrel: BrewBarrel) {
       <div v-if="seedPicker.open" class="pm-modal-mask" @click.self="seedPicker.open = false">
         <div class="pm-modal">
           <header class="pm-modal-head">
-            <h3><PmIcon name="farm" :size="16" /> 选择种植材料 · 第{{ seedPicker.plot?.id.slice(2) }}号畦</h3>
+            <h3><PmIcon name="farm" :size="16" /> 选择种植材料 · {{ seedPicker.plot ? plotLabel(seedPicker.plot) : '田畦' }}</h3>
             <button class="pm-link" @click="seedPicker.open = false"><PmIcon name="x" :size="16" /></button>
           </header>
           <div class="pm-modal-body">

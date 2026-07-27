@@ -15,12 +15,17 @@ const tabs: Array<{ id: Section; label: string }> = [
   { id: 'records', label: '经营流水' },
 ];
 
-const activeMaintenance = computed(() => game.tavernMaintenance.filter(item => item.enabled));
 const formulaById = computed(() => new Map(game.tavernStateFormulas.map(item => [item.id, item])));
+const activeMaintenance = computed(() => game.tavernMaintenance.filter(item => item.enabled));
+const visibleMaintenance = computed(() => game.tavernMaintenance.filter(item => formulaById.value.has(item.formulaId)));
 const regionOptions = computed(() => game.regions.map(region => region.name));
 
 function maintenanceFor(formula: TavernStateFormula) {
   return game.tavernMaintenance.find(item => item.formulaId === formula.id);
+}
+
+function formulaMaintenanceEnabled(formula: TavernStateFormula) {
+  return Boolean(maintenanceFor(formula)?.enabled);
 }
 
 function requirementText(formula: TavernStateFormula) {
@@ -38,6 +43,7 @@ function maintenanceCadenceText(formula: TavernStateFormula) {
 }
 
 function maintenanceNextText(entry: TavernMaintenanceEntry) {
+  if (!entry.enabled) return '已暂停，不会自动补充';
   if (entry.status === 'shortage') return '补充暂停';
   const remaining = Math.floor(Number(entry.remainingTurns) || 0);
   if (remaining > 0) return `约${remaining}回合后补充`;
@@ -49,7 +55,7 @@ function agreementKind(agreement: BusinessAgreement) {
 }
 
 function agreementCadenceText(agreement: BusinessAgreement) {
-  return agreement.cadence === 'weekly' ? '每周一次' : '每日一次';
+  return `每${Math.max(1, Math.floor(Number(agreement.intervalDays) || (agreement.cadence === 'weekly' ? 7 : 1)))}天`;
 }
 
 function moneyText(value: number) {
@@ -59,7 +65,29 @@ function moneyText(value: number) {
 
 function inventoryText(agreement: BusinessAgreement) {
   if (!agreement.inventoryChanges.length) return '';
-  return agreement.inventoryChanges.map(item => `${item.name} ${item.qty > 0 ? '+' : ''}${item.qty}`).join('、');
+  return agreement.inventoryChanges.map(item => `库房.${item.category}.${item.name}:${item.qty > 0 ? '+' : ''}${item.qty}`).join('、');
+}
+
+function agreementDate(daySerial?: number) {
+  if (!daySerial) return '未记录';
+  const safeDay = Math.max(1, Math.floor(Number(daySerial) || 1));
+  const adjusted = safeDay - 1;
+  const year = Math.floor(adjusted / 360);
+  const rem = adjusted % 360;
+  const month = Math.floor(rem / 30) + 1;
+  const day = (rem % 30) + 1;
+  return `${year}-${month}-${day}`;
+}
+
+function agreementNextText(agreement: BusinessAgreement) {
+  const time = eventRuleFor(agreement).triggerTime;
+  return `${agreementDate(agreement.nextDueDaySerial)}${time ? ` ${time}` : ''}`;
+}
+
+function agreementLastText(agreement: BusinessAgreement) {
+  if (!agreement.lastSettledDaySerial) return '未记录';
+  const time = eventRuleFor(agreement).triggerTime;
+  return `${agreementDate(agreement.lastSettledDaySerial)}${time ? ` ${time}` : ''}`;
 }
 
 function eventRuleFor(agreement: BusinessAgreement) {
@@ -122,14 +150,14 @@ function recordDate(daySerial: number) {
             </div>
             <button
               class="maintenance-toggle"
-              :class="{ active: maintenanceFor(formula)?.enabled, disabled: !formula.requirements.length }"
+              :class="{ active: formulaMaintenanceEnabled(formula), disabled: !formula.requirements.length }"
               type="button"
               :disabled="!formula.requirements.length"
               :title="maintenanceFor(formula)?.enabled ? '维持中' : '未启用'"
               :aria-label="maintenanceFor(formula)?.enabled ? '停止维持' : '开始维持'"
-              @click="game.setMaintenanceEnabled(maintenanceFor(formula)?.id ?? '', !maintenanceFor(formula)?.enabled)"
+              @click="game.setTavernStateFormulaMaintenanceEnabled(formula.id, !formulaMaintenanceEnabled(formula))"
             >
-              <PmIcon :name="maintenanceFor(formula)?.enabled ? 'candle' : 'x'" :size="15" />
+              <PmIcon :name="formulaMaintenanceEnabled(formula) ? 'candle' : 'x'" :size="15" />
             </button>
           </header>
           <p>{{ formula.description }}</p>
@@ -142,21 +170,36 @@ function recordDate(daySerial: number) {
           </div>
           <div class="entry-meta"><span>{{ maintenanceCadenceText(formula) }}</span><strong>{{ requirementText(formula) }}</strong></div>
           <div v-if="formula.guestResponseHint" class="guest-hint">客人感受：{{ formula.guestResponseHint }}</div>
-          <footer><button class="pm-link danger" @click="game.deleteTavernStateFormula(formula.id)">删除记录</button></footer>
+          <footer class="operation-actions">
+            <button
+              class="pm-btn sm ghost"
+              type="button"
+              :disabled="!formula.requirements.length"
+              @click="game.setTavernStateFormulaMaintenanceEnabled(formula.id, !formulaMaintenanceEnabled(formula))"
+            >
+              {{ formulaMaintenanceEnabled(formula) ? '暂停维持' : '启用维持' }}
+            </button>
+            <button class="pm-link danger" @click="game.deleteTavernStateFormula(formula.id)">删除记录</button>
+          </footer>
         </article>
       </section>
 
       <section v-else-if="section === 'maintenance'" class="entry-list">
-        <div v-if="!activeMaintenance.length" class="pm-empty">当前没有主动维持的酒馆状态。</div>
-        <article v-for="entry in activeMaintenance" :key="entry.id" class="operation-entry" :class="entry.status">
+        <div v-if="!visibleMaintenance.length" class="pm-empty">当前没有主动维持的酒馆状态。</div>
+        <article v-for="entry in visibleMaintenance" :key="entry.id" class="operation-entry" :class="[entry.status, { disabled: !entry.enabled }]">
           <header>
             <div><h3>{{ formulaById.get(entry.formulaId)?.name ?? '失效记录' }}</h3><span class="pm-tag">{{ formulaById.get(entry.formulaId)?.targetRegion }}</span></div>
-            <span class="status-text">{{ entry.status === 'shortage' ? '物资不足' : '正常维持' }}</span>
+            <span class="status-text">{{ !entry.enabled ? '已暂停' : entry.status === 'shortage' ? '物资不足' : '正常维持' }}</span>
           </header>
           <p>{{ formulaById.get(entry.formulaId)?.description }}</p>
           <div class="entry-meta"><span>{{ maintenanceNextText(entry) }}</span><strong>{{ formulaById.get(entry.formulaId) ? requirementText(formulaById.get(entry.formulaId)!) : '未知' }}</strong></div>
           <div v-if="entry.pauseReason" class="shortage-note">{{ entry.pauseReason }}</div>
-          <footer><button class="pm-btn sm ghost" @click="game.setMaintenanceEnabled(entry.id, false)">停止维持</button></footer>
+          <footer class="operation-actions">
+            <button class="pm-btn sm ghost" @click="game.setMaintenanceEnabled(entry.id, !entry.enabled)">
+              {{ entry.enabled ? '暂停维持' : '恢复维持' }}
+            </button>
+            <button class="pm-link danger" @click="game.deleteTavernMaintenance(entry.id)">取消维护</button>
+          </footer>
         </article>
       </section>
 
@@ -175,8 +218,11 @@ function recordDate(daySerial: number) {
           <div class="agreement-grid">
             <span><small>约定对象</small><strong>{{ agreement.counterparty }}</strong></span>
             <span><small>周期</small><strong>{{ agreementCadenceText(agreement) }}</strong></span>
-            <span><small>钱匣</small><strong>{{ moneyText(agreement.cashboxDeltaCopper) }}</strong></span>
+            <span><small>下次</small><strong>{{ agreementNextText(agreement) }}</strong></span>
+            <span><small>上次</small><strong>{{ agreementLastText(agreement) }}</strong></span>
+            <span><small>扣款</small><strong>{{ moneyText(agreement.cashboxDeltaCopper) }}</strong></span>
             <span v-if="inventoryText(agreement)"><small>库房</small><strong>{{ inventoryText(agreement) }}</strong></span>
+            <span><small>失败</small><strong>{{ agreement.failurePolicy || '余额不足暂停' }}</strong></span>
           </div>
           <div v-if="showAgreementEventEditor" class="agreement-event-editor" :class="{ off: !eventRuleFor(agreement).enabled }">
             <header>
@@ -228,7 +274,12 @@ function recordDate(daySerial: number) {
               @change="game.updateBusinessAgreementEventRule(agreement.id, { prompt: ($event.target as HTMLTextAreaElement).value })"
             ></textarea>
           </div>
-          <footer><button class="pm-link danger" @click="game.deleteBusinessAgreement(agreement.id)">删除约定</button></footer>
+          <footer class="operation-actions">
+            <button class="pm-btn sm ghost" @click="game.setBusinessAgreementEnabled(agreement.id, !agreement.enabled)">
+              {{ agreement.enabled ? '暂停约定' : '恢复约定' }}
+            </button>
+            <button class="pm-link danger" @click="game.deleteBusinessAgreement(agreement.id)">删除重谈</button>
+          </footer>
         </article>
       </section>
 
@@ -258,6 +309,9 @@ function recordDate(daySerial: number) {
 .operation-entry { display: grid; gap: 9px; padding: 13px; border: 1px solid rgba(110,80,34,.38); border-radius: 4px; background: rgba(255,247,222,.42); }
 .operation-entry header, .operation-entry header > div, .operation-entry footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .operation-entry header > div { justify-content: flex-start; flex-wrap: wrap; }
+.operation-actions { justify-content: flex-start !important; flex-wrap: wrap; }
+.operation-actions .pm-btn,
+.operation-actions .pm-link { min-height: 30px; }
 .operation-entry h3, .operation-entry p { margin: 0; }
 .operation-entry h3 { font-size: calc(17px * var(--pm-text-scale)); }
 .operation-entry p { color: var(--pm-ink-soft); line-height: 1.55; }

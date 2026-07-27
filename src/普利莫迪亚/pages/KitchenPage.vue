@@ -225,7 +225,6 @@ async function recordCraftAction(mode: CraftMode) {
   }, {
     type: 'COOK_DISH',
     title: craftModeLabels[mode],
-    inputText: `玩家用这些材料${craftModeLabels[mode]}：${summaryBeforeAction}。`,
     aiHint: '请按对应生成引擎叙述制作过程, 并输出 <craft_result> 隐藏数据块供前端入库。',
     logText: `${craftModeLabels[mode]} · ${summaryBeforeAction}`,
     preserveLocalState: true,

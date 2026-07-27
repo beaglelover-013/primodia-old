@@ -59,7 +59,7 @@ const openings = computed(() => [
     heroine: '莲洵与莲沁',
     race: '兔族',
     time: '解冻月 · 午后',
-    image: '',
+    image: 'https://files.catbox.moe/pp87ey.png',
     summary: `兔族双子推开${displayedTavernName.value}的门：姐姐莲洵连珠炮地问吃住，妹妹莲沁安静地站在半步后。`,
   },
   {
