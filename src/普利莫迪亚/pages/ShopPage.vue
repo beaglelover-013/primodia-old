@@ -268,7 +268,7 @@ async function checkout() {
                 <span class="category">{{ p.category }}</span>
                 <span v-for="tag in p.tags" :key="tag" :class="tagToneClass(tag)">{{ tag }}</span>
               </div>
-              <div v-if="p.portionsPerUnit > 1" class="portion-meter" :title="`购买一${productUnits(p).unit}可分为 ${p.portionsPerUnit}${productUnits(p).portionUnit}`">
+              <div class="portion-meter" :title="`购买一${productUnits(p).unit}可分为 ${p.portionsPerUnit}${productUnits(p).portionUnit}`">
                 <div class="portion-head">
                   <span>整{{ productUnits(p).unit }}用量</span>
                   <strong>{{ p.portionsPerUnit }}/{{ p.portionsPerUnit }}{{ productUnits(p).portionUnit }}</strong>

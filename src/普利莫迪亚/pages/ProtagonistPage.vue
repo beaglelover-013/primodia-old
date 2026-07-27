@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { useGameStore, type InventoryItem } from '../stores/game';
+import { computed, ref } from 'vue';
+import { formatCopper, useGameStore, type InventoryItem } from '../stores/game';
 import PmIcon from '../components/PmIcon.vue';
+import { tagToneClass } from '../utils/tagAppearance';
 
 const game = useGameStore();
 const p = game.protagonist;
@@ -19,12 +20,63 @@ const energyPercent = computed(() => `${Math.max(0, Math.min(100, (energyValue.v
 const satchelItems = computed(() => game.satchel.filter(item => item.qty > 0));
 const satchelItemKinds = computed(() => satchelItems.value.length);
 const satchelItemCount = computed(() => satchelItems.value.reduce((total, item) => total + Math.max(0, item.qty), 0));
+const organizingItemIds = ref<Set<string>>(new Set());
+const organizingAll = ref(false);
 const protagonistTemporaryStates = computed(() =>
   game.flattenTemporaryStates().filter(state => state.targetType === '主角'),
 );
 
 function stockUnit(item: InventoryItem) {
   return game.inventoryStockUnitForItem(item);
+}
+
+function portionUnit(item: InventoryItem) {
+  return game.inventoryPortionUnitForItem(item);
+}
+
+function portionText(item: InventoryItem) {
+  const portions = Math.max(1, Math.floor(Number(item.portionsPerUnit) || 1));
+  const remaining = Math.max(0, Math.min(portions, Math.floor(Number(item.remainingPortions ?? portions) || 0)));
+  return `${remaining}/${portions}${portionUnit(item)}`;
+}
+
+async function organizeToStorage(item: InventoryItem) {
+  if (organizingItemIds.value.has(item.id)) return;
+  organizingItemIds.value = new Set([...organizingItemIds.value, item.id]);
+  try {
+    const result = await game.executePseudoZeroAction(
+      {
+        type: 'INVENTORY_MOVE_TO_STORAGE',
+        itemId: item.id,
+        qty: item.qty,
+      },
+      {
+        type: 'INVENTORY_MOVE_TO_STORAGE',
+        title: '整理入库',
+        logText: `整理入库 · ${item.name} ×${item.qty}`,
+        queueDraft: true,
+      },
+    );
+    if (!result.ok) game.pushLog('提示', result.message);
+  } finally {
+    const next = new Set(organizingItemIds.value);
+    next.delete(item.id);
+    organizingItemIds.value = next;
+  }
+}
+
+async function organizeAllToStorage() {
+  if (organizingAll.value || satchelItems.value.length === 0) return;
+  organizingAll.value = true;
+  const targets = satchelItems.value.map(item => item.id);
+  try {
+    for (const itemId of targets) {
+      const item = game.satchel.find(entry => entry.id === itemId);
+      if (item?.qty) await organizeToStorage(item);
+    }
+  } finally {
+    organizingAll.value = false;
+  }
 }
 
 function trainCooking() {
@@ -102,16 +154,45 @@ function trainCooking() {
             <h3><PmIcon name="ledger" :size="16" /> 随身行囊</h3>
             <p>主角当前随身携带的物品。</p>
           </div>
-          <span>{{ satchelItemKinds }} 种 · {{ satchelItemCount }} 件</span>
+          <div class="satchel-head-actions">
+            <span>{{ satchelItemKinds }} 种 · {{ satchelItemCount }} 件</span>
+            <button
+              v-if="satchelItems.length"
+              class="pm-btn sm"
+              :disabled="organizingAll"
+              @click="organizeAllToStorage"
+            >
+              <PmIcon name="home" :size="13" />
+              {{ organizingAll ? '整理中' : '全部整理入库' }}
+            </button>
+          </div>
         </header>
 
         <div v-if="satchelItems.length" class="satchel-list">
           <article v-for="item in satchelItems" :key="item.id">
-            <div>
-              <strong>{{ item.name }}</strong>
-              <small>{{ item.category }}</small>
+            <div class="satchel-item-head">
+              <div>
+                <strong>{{ item.name }}</strong>
+                <small>{{ item.category }}</small>
+              </div>
+              <span>×{{ item.qty }}{{ stockUnit(item) }}</span>
             </div>
-            <span>×{{ item.qty }}{{ stockUnit(item) }}</span>
+            <div v-if="item.tags.length" class="satchel-tags">
+              <span v-for="tag in item.tags" :key="tag" class="pm-tag" :class="tagToneClass(tag)">{{ tag }}</span>
+            </div>
+            <div class="satchel-meta">
+              <span><small>当前份数</small><b>{{ portionText(item) }}</b></span>
+              <span><small>整件价格</small><b>{{ formatCopper(item.priceCopper) }}</b></span>
+            </div>
+            <p v-if="item.desc">{{ item.desc }}</p>
+            <button
+              class="satchel-store-btn"
+              :disabled="organizingItemIds.has(item.id) || organizingAll"
+              @click="organizeToStorage(item)"
+            >
+              <PmIcon name="home" :size="13" />
+              {{ organizingItemIds.has(item.id) ? '整理中' : '整理入库' }}
+            </button>
           </article>
         </div>
         <div v-else class="pm-empty compact">行囊里暂时没有物品。</div>
@@ -260,25 +341,41 @@ function trainCooking() {
   font-weight: 700;
   white-space: nowrap;
 }
+.satchel-head-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.satchel-head-actions > span {
+  color: var(--pm-gold-dim);
+  font-weight: 700;
+  white-space: nowrap;
+}
 .satchel-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   gap: 8px;
 }
 .satchel-list article {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  align-content: start;
   gap: 8px;
-  min-height: 42px;
-  padding: 8px 10px;
+  min-height: 154px;
+  padding: 10px;
   border: 1px solid rgba(110, 80, 34, 0.34);
   border-radius: 4px;
   background: rgba(255, 249, 229, 0.58);
   color: var(--pm-ink);
   text-align: left;
 }
-.satchel-list article > div {
+.satchel-item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.satchel-item-head > div {
   display: grid;
   gap: 2px;
   min-width: 0;
@@ -293,11 +390,56 @@ function trainCooking() {
   color: var(--pm-ink-dim);
   font-size: calc(10px * var(--pm-text-scale));
 }
-.satchel-list span {
+.satchel-item-head > span {
   color: var(--pm-ink-dim);
   font-size: calc(12px * var(--pm-text-scale));
   font-weight: 700;
   white-space: nowrap;
+}
+.satchel-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 20px;
+}
+.satchel-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px dashed rgba(110, 80, 34, 0.3);
+  border-bottom: 1px dashed rgba(110, 80, 34, 0.3);
+}
+.satchel-meta > span {
+  display: grid;
+  gap: 2px;
+  padding: 6px 4px;
+}
+.satchel-meta > span + span {
+  border-left: 1px solid rgba(110, 80, 34, 0.24);
+}
+.satchel-meta b {
+  color: var(--pm-ink);
+  font-size: calc(12px * var(--pm-text-scale));
+}
+.satchel-list article > p {
+  margin: 0;
+  color: var(--pm-ink-dim);
+  font-size: calc(11px * var(--pm-text-scale));
+  line-height: 1.45;
+}
+.satchel-store-btn {
+  align-self: end;
+  min-height: 30px;
+  border: 1px solid rgba(119, 82, 27, 0.5);
+  border-radius: 4px;
+  background: linear-gradient(180deg, #f8e5ad, #c99742);
+  color: #3d2810;
+  font-family: var(--pm-font-display);
+  font-weight: 700;
+  cursor: pointer;
+}
+.satchel-store-btn:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 @media (max-width: 860px) {
   .hero-card,
@@ -306,6 +448,13 @@ function trainCooking() {
   .satchel-foot {
     grid-template-columns: 1fr;
     align-items: stretch;
+  }
+  .satchel-head-actions {
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+  .satchel-list {
+    grid-template-columns: 1fr;
   }
 }
 </style>

@@ -6752,18 +6752,27 @@ export const useGameStore = defineStore('primordia', () => {
         stored.name === item.name &&
         stored.category === category &&
         sameTagSet(stored.tags, tags) &&
-        portionsPerUnitForItem(stored) === portionsPerUnit &&
         String(stored.batch ?? '') === String('batch' in item ? item.batch ?? '' : ''),
     );
     const qty = Math.max(0, Math.floor(Number(item.qty) || 0));
-    if (qty <= 0) return;
+    if (qty <= 0) return undefined;
     if (existed) {
+      const previousPortionsPerUnit = portionsPerUnitForItem(existed);
+      const previousRemainingPortions = remainingPortionsForItem(existed);
       existed.qty += qty;
-      if (!existed.desc && item.desc) existed.desc = item.desc;
-      if (!existed.priceCopper && item.priceCopper) existed.priceCopper = item.priceCopper;
-      return;
+      existed.portionsPerUnit = portionsPerUnit;
+      existed.remainingPortions =
+        previousPortionsPerUnit === portionsPerUnit
+          ? Math.max(0, Math.min(portionsPerUnit, previousRemainingPortions))
+          : portionsPerUnit;
+      existed.tags = tags;
+      if (item.desc) existed.desc = item.desc;
+      if (Number(item.priceCopper) >= 0) existed.priceCopper = Math.max(0, Math.floor(Number(item.priceCopper) || 0));
+      if ('unit' in item) existed.unit = item.unit;
+      if ('portionUnit' in item) existed.portionUnit = item.portionUnit;
+      return existed;
     }
-    collection.push({
+    const nextItem: InventoryItem = {
       id: 'id' in item && item.id ? item.id : `i-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       name: item.name,
       category,
@@ -6779,7 +6788,9 @@ export const useGameStore = defineStore('primordia', () => {
       priceCopper: item.priceCopper,
       ...('quality' in item && item.quality ? { quality: item.quality } : {}),
       ...('recipeSource' in item && item.recipeSource ? { recipeSource: clonePlain(item.recipeSource) } : {}),
-    });
+    };
+    collection.push(nextItem);
+    return nextItem;
   }
 
   function itemSourceLabel(source: InventorySource) {
@@ -7014,7 +7025,7 @@ export const useGameStore = defineStore('primordia', () => {
   function addSatchelFromAction(item: BuyActionItem) {
     const category = normalizeInventoryCategory(item.category);
     const tags = normalizeActionTags(item, category);
-    addItemToCollection(satchel.value, { ...item, category, tags });
+    return addItemToCollection(satchel.value, { ...item, category, tags });
   }
 
   function moveInventoryItemBetweenCollections(from: InventoryItem[], to: InventoryItem[], itemId: string, qty?: number) {
@@ -7613,12 +7624,20 @@ export const useGameStore = defineStore('primordia', () => {
     }
 
     const items = action.items
-      .map(item => ({
-        ...item,
-        qty: Math.max(0, Math.floor(Number(item.qty) || 0)),
-        stock: Math.max(0, Math.floor(Number(item.stock) || 0)),
-        priceCopper: Math.max(0, Math.floor(Number(item.priceCopper) || 0)),
-      }))
+      .map(item => {
+        const shelfProduct = generatedShopProducts.value.find(product => product.id === item.id);
+        return {
+          ...item,
+          name: shelfProduct?.name ?? item.name,
+          category: shelfProduct?.category ?? item.category,
+          qty: Math.max(0, Math.floor(Number(item.qty) || 0)),
+          stock: Math.max(0, Math.floor(Number(shelfProduct?.stock ?? item.stock) || 0)),
+          priceCopper: Math.max(0, Math.floor(Number(shelfProduct?.priceCopper ?? item.priceCopper) || 0)),
+          portionsPerUnit: Math.max(1, Math.floor(Number(shelfProduct?.portionsPerUnit ?? item.portionsPerUnit) || 1)),
+          tags: clonePlain(shelfProduct?.tags ?? item.tags ?? []),
+          desc: shelfProduct?.desc ?? item.desc,
+        };
+      })
       .filter(item => item.qty > 0);
     if (items.length === 0) return { ok: false, tone: 'amber', message: '还没有选择要购买的东西。' };
 
@@ -7644,7 +7663,15 @@ export const useGameStore = defineStore('primordia', () => {
     const summary = items.map(item => `${item.name}×${item.qty}`).join('、');
     walletCopper.value = Math.max(0, walletCopper.value - total);
     items.forEach(item => {
-      addSatchelFromAction(item);
+      const stored = addSatchelFromAction(item);
+      if (stored) {
+        stored.portionsPerUnit = item.portionsPerUnit;
+        stored.remainingPortions =
+          remainingPortionsForItem(stored) > 0
+            ? Math.min(item.portionsPerUnit, remainingPortionsForItem(stored))
+            : item.portionsPerUnit;
+        stored.priceCopper = item.priceCopper;
+      }
       const nextStock = Math.max(0, item.stock - item.qty);
       stockDeltas[item.id] = nextStock;
       const generatedProduct = generatedShopProducts.value.find(product => product.id === item.id);
@@ -11596,16 +11623,21 @@ export const useGameStore = defineStore('primordia', () => {
       for (const [name, raw] of Object.entries(record)) {
         const parsed = inventoryItemFromRecord(name, raw, category, `${category}-${name}-${nextInventory.length}`);
         if (!parsed) continue;
-        const existingRecipeSource = previous.find(
+        const existingItem = previous.find(
           existing =>
             existing.name === name &&
             existing.category === category &&
-            sameTagSet(existing.tags, parsed.tags) &&
-            existing.recipeSource,
-        )?.recipeSource;
+            sameTagSet(existing.tags, parsed.tags),
+        );
         nextInventory.push({
           ...parsed,
-          ...(existingRecipeSource ? { recipeSource: clonePlain(existingRecipeSource) } : {}),
+          ...(existingItem?.id ? { id: existingItem.id } : {}),
+          ...(parsed.unit || !existingItem?.unit ? {} : { unit: existingItem.unit }),
+          ...(parsed.portionUnit || !existingItem?.portionUnit ? {} : { portionUnit: existingItem.portionUnit }),
+          ...(parsed.batch || !existingItem?.batch ? {} : { batch: existingItem.batch }),
+          ...(parsed.baseName || !existingItem?.baseName ? {} : { baseName: existingItem.baseName }),
+          ...(parsed.desc || !existingItem?.desc ? {} : { desc: existingItem.desc }),
+          ...(existingItem?.recipeSource ? { recipeSource: clonePlain(existingItem.recipeSource) } : {}),
         });
       }
     }
