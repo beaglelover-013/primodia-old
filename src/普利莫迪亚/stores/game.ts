@@ -7652,6 +7652,12 @@ export const useGameStore = defineStore('primordia', () => {
 
     const stockDeltas: Record<string, number> = {};
     const summary = items.map(item => `${item.name}×${item.qty}`).join('、');
+    const purchaseBreakdown = items
+      .map(item => {
+        const portionsPerUnit = Math.max(1, Math.floor(Number(item.portionsPerUnit) || 1));
+        return `${item.name}：行囊数量增加${item.qty}件整件，每件${portionsPerUnit}份，可用份数合计${item.qty * portionsPerUnit}份`;
+      })
+      .join('；');
     walletCopper.value = Math.max(0, walletCopper.value - total);
     items.forEach(item => {
       addSatchelFromAction(item);
@@ -7676,8 +7682,8 @@ export const useGameStore = defineStore('primordia', () => {
       paidCopper: total,
       summary,
       stockDeltas,
-      narrativeFact: `当前地点仍为「${scene}」。玩家在「${action.shopName}」向${keeper}买下：${summary}；共付 ${formatCopper(total)}。前端已完成结算：随身钱袋扣除 ${formatCopper(total)}，购买物品已先装入个人行囊，尚未整理进库房；对应货架数量已减少。`,
-      settledFact: `当前位置仍为「${scene}」。玩家在「${action.shopName}」向${keeper}买下：${summary}；共付 ${formatCopper(total)}。前端已完成结算：随身钱袋减少 ${formatCopper(total)}，购买物品已进入个人行囊，对应货架数量已减少。`,
+      narrativeFact: `当前地点仍为「${scene}」。玩家在「${action.shopName}」向${keeper}完成采购，共付 ${formatCopper(total)}。采购明细：${purchaseBreakdown}。前端已完成结算：随身钱袋扣除 ${formatCopper(total)}，上述购买整件已先装入个人行囊，尚未整理进库房；对应货架数量已减少。整件数量、每件份数和总份数是三种不同数字，不得把购买后的货架余量写成行囊数量。`,
+      settledFact: `当前位置仍为「${scene}」。玩家在「${action.shopName}」向${keeper}完成采购，共付 ${formatCopper(total)}。采购明细：${purchaseBreakdown}。前端已完成结算：随身钱袋减少 ${formatCopper(total)}，上述购买整件已进入个人行囊，对应货架数量已减少。行囊中的数量必须按购买整件数记录，每件份数单独记录；不得使用货架余量替代。`,
     };
   }
 
@@ -8177,8 +8183,6 @@ export const useGameStore = defineStore('primordia', () => {
       });
       return result;
     }
-    const purchaseSettlementSnapshot = action.type === 'BUY_ITEMS' ? snapshotLocalSettlement() : null;
-
     await writeChatSave();
     // This settlement is still pending narration. The request path attaches
     // it to the new user/assistant floors; writing here would mutate history.
@@ -8299,17 +8303,6 @@ export const useGameStore = defineStore('primordia', () => {
         tone: 'red',
         message: rollbackReason,
       };
-    }
-    if (purchaseSettlementSnapshot && narrativeOk && narrative.autoSend) {
-      walletCopper.value = normalizeCopperValue(purchaseSettlementSnapshot.walletCopper);
-      satchel.value = clonePlain(purchaseSettlementSnapshot.satchel);
-      generatedShop.value = purchaseSettlementSnapshot.generatedShop
-        ? clonePlain(purchaseSettlementSnapshot.generatedShop)
-        : null;
-      generatedShopProducts.value = clonePlain(purchaseSettlementSnapshot.generatedShopProducts);
-      markLocalStateDirty();
-      await writeFrontendSettlementToCurrentMessage(result.frontendMvuScope, '采购结算校正');
-      await writeChatSave();
     }
     return result;
   }
