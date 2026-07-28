@@ -7655,7 +7655,7 @@ export const useGameStore = defineStore('primordia', () => {
     const purchaseBreakdown = items
       .map(item => {
         const portionsPerUnit = Math.max(1, Math.floor(Number(item.portionsPerUnit) || 1));
-        return `${item.name}：行囊数量增加${item.qty}件整件，每件${portionsPerUnit}份，可用份数合计${item.qty * portionsPerUnit}份`;
+        return `${item.name}：行囊数量增加${item.qty}件整件，每件${portionsPerUnit}份，每件单价${formatCopper(item.priceCopper)}，该项小计${formatCopper(item.priceCopper * item.qty)}，可用份数合计${item.qty * portionsPerUnit}份`;
       })
       .join('；');
     walletCopper.value = Math.max(0, walletCopper.value - total);
