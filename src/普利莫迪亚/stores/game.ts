@@ -13085,7 +13085,9 @@ export const useGameStore = defineStore('primordia', () => {
       const combined = [actionDraft.value.trim(), playerInput.value.trim()].filter(Boolean).join('\n—— 玩家旁白 ——\n');
       const queuedRequirements = draftActions.value.filter(action => action.hidden || action.aiHint?.trim() || action.settledFact?.trim());
       const hiddenAiHint = queuedRequirements.map(action => action.aiHint?.trim()).filter(Boolean).join('\n\n');
-      const hiddenSettledFact = aggregateHiddenSettledFacts(queuedRequirements);
+      // Settlement facts remain on queued actions for rollback and MVU snapshot
+      // handling, but are intentionally omitted from the narration prompt.
+      const hiddenSettledFact = '';
       const frontendMvuScope = mergeFrontendMvuScopes(...draftActions.value.map(action => action.frontendMvuScope));
       const frontendMvuSnapshot = draftActions.value.reduce<PrimordiaStatData | undefined>((snapshot, action) => {
         if (!action.frontendMvuSnapshot) return snapshot;
@@ -13144,7 +13146,7 @@ export const useGameStore = defineStore('primordia', () => {
     const combined = [actionDraft.value.trim(), playerInput.value.trim()].filter(Boolean).join('\n—— 玩家旁白 ——\n');
     const hiddenRequirements = draftActions.value.filter(action => action.hidden);
     const hiddenAiHint = hiddenRequirements.map(action => action.aiHint?.trim()).filter(Boolean).join('\n\n');
-    const hiddenSettledFact = aggregateHiddenSettledFacts(hiddenRequirements);
+    const hiddenSettledFact = '';
     const isPrebuiltNarrationPrompt =
       /<玩家本回合行动>|【叙述者权限边界】|【当前权威局势】|【输出格式】/.test(combined) ||
       combined.includes('【系统已结算 / 权威局势】') ||
@@ -13197,16 +13199,15 @@ export const useGameStore = defineStore('primordia', () => {
   async function runStoryAction(action: StoryActionInput): Promise<boolean> {
     const existingText = [actionDraft.value.trim(), playerInput.value.trim()].filter(Boolean).join('\n—— 玩家旁白 ——\n');
     const combinedFact = [existingText, action.fact].filter(Boolean).join('\n');
-    const settledFact = action.settled === false ? undefined : action.settledFact ?? action.fact;
     const npcActivityPlan = prepareTavernNpcActivityPlan(combinedFact, { logSkip: true });
     const backgroundFlowPlan = prepareBackgroundFlowPlan();
     const businessVisitorPlan = prepareBusinessVisitorPlan();
     const prompt = buildNarrationPrompt({
       userText: `<user>${combinedFact}</user>`,
-      settledFact,
+      settledFact: undefined,
       actionType: action.type,
       actionTitle: action.title,
-      timeChange: settledFact ? action.timeChange : undefined,
+      timeChange: undefined,
       aiHint: action.aiHint,
       npcActivityPlan,
       backgroundFlowPlan,

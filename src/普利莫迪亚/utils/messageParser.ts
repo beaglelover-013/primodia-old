@@ -303,6 +303,15 @@ function stripHiddenStoryTags(content: string): string {
   );
 }
 
+function stripVisibleFormattingMarkup(content: string): string {
+  return content
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<br\b[^>]*\/?>/gi, '\n')
+    .replace(/<\/(?:p|div)>/gi, '\n\n')
+    .replace(/<\/?(?:p|div|span|font|strong|em|b|i|u|s)\b[^>]*>/gi, '')
+    .trim();
+}
+
 function decodeHtmlEntities(content: string) {
   return content
     .replace(/&lt;/gi, '<')
@@ -486,7 +495,7 @@ export function parseMaintext(messageContent: string): string {
   const content = extractLastTag(cleaned, CONTENT_STORY_TAG);
   const narrative = extractLastTag(cleaned, LEGACY_NARRATIVE_TAG);
   const body = maintext || content || narrative || cleaned;
-  return stripSeparatorOnlyParagraphs(stripFrontendPlaceholders(stripHiddenStoryTags(body))
+  return stripSeparatorOnlyParagraphs(stripFrontendPlaceholders(stripVisibleFormattingMarkup(stripHiddenStoryTags(body)))
     .replace(/<NARRATIVE\b[^>]*>/gi, '')
     .replace(/<\/NARRATIVE>/gi, '')
     .replace(/<CONTEXT_conception\b[^>]*>[\s\S]*?<\/CONTEXT_conception>/gi, '')
@@ -1735,42 +1744,15 @@ function parseLatestAssistantTurnCapture(candidates: any[]): StoryMessagePayload
   return parseStoryMessage(fullMessage, latest.message_id, { preferEmbeddedNormalized: false });
 }
 
-function hasCapturedStoryFormat(payload: StoryMessagePayload): boolean {
-  return Boolean(
-    payload.shop ||
-      payload.craftResult ||
-      payload.guestUpdates?.length ||
-      payload.regularGuestUpdates?.length ||
-      payload.promiseUpdates?.length ||
-      payload.tavernStateUpdates?.length ||
-      payload.businessAgreementUpdates?.length ||
-      payload.characterBehaviorUpdates?.length,
-  );
-}
-
-/** Reads the newest assistant floor even when it only contains a captured data block. */
+/** Reads capture blocks from the latest assistant turn without falling back to history. */
 export function loadLatestAssistantCapture(): LatestMaintextPayload {
   try {
-    if (typeof getLastMessageId !== 'function') return loadLatestAssistantMaintext();
+    if (typeof getLastMessageId !== 'function') return { maintext: '', options: [], sum: '' };
     const candidates = readAssistantStoryCandidates(getLastMessageId());
     const turnCapture = parseLatestAssistantTurnCapture(candidates);
-    if (turnCapture && hasCapturedStoryFormat(turnCapture)) return turnCapture;
-
-    for (let index = candidates.length - 1; index >= 0; index -= 1) {
-      const message = candidates[index];
-      const parsed = parseStoryMessage(String(message?.message ?? ''), message?.message_id);
-      if (hasCapturedStoryFormat(parsed)) return parsed;
-    }
-
-    if (turnCapture && isUsableStoryText(turnCapture.maintext)) return turnCapture;
-
-    for (let index = candidates.length - 1; index >= 0; index -= 1) {
-      const message = candidates[index];
-      const parsed = parseStoryMessage(String(message?.message ?? ''), message?.message_id);
-      if (isUsableStoryText(parsed.maintext)) return parsed;
-    }
+    return turnCapture ?? { maintext: '', options: [], sum: '' };
   } catch (error) {
     console.warn('[primordia] 无法读取最新捕捉楼层:', error);
   }
-  return loadLatestAssistantMaintext();
+  return { maintext: '', options: [], sum: '' };
 }

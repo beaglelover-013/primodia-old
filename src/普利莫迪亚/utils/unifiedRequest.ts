@@ -736,8 +736,10 @@ function normalizeAssistantMessage(raw: string): {
   const sum = extractLastTag(cleaned, 'sum');
   const updateVariable = extractLastTag(cleaned, 'UpdateVariable');
   const jsonPatch = extractEmbeddedJsonPatch(cleaned);
-  let maintext = stripHiddenOutputTags(
-    extractLastTag(cleaned, 'maintext') || extractLastTag(cleaned, 'content') || extractLastTag(cleaned, 'NARRATIVE'),
+  let maintext = stripVisibleFormattingMarkup(
+    stripHiddenOutputTags(
+      extractLastTag(cleaned, 'maintext') || extractLastTag(cleaned, 'content') || extractLastTag(cleaned, 'NARRATIVE'),
+    ),
   );
   if (maintext && !hasRenderableStreamingText(maintext)) {
     maintext = '';
@@ -749,7 +751,7 @@ function normalizeAssistantMessage(raw: string): {
     maintext = '新的店铺已经被找到，货架内容被登记入册。';
   }
   if (!maintext) {
-    maintext = stripHiddenOutputTags(cleaned)
+    maintext = stripVisibleFormattingMarkup(stripHiddenOutputTags(cleaned))
       .replace(/```[\w-]*\s*/g, '')
       .replace(/```/g, '')
       .replace(/^\s*(收到(?:命令|指令)?[，,。.！!：:]?|明白[，,。.！!：:]?|好的[，,。.！!：:]?)/, '')
@@ -817,6 +819,15 @@ function stripHiddenOutputTags(content: string): string {
     .replace(/<JSONPatch\b[^>]*>[\s\S]*?<\/JSONPatch>/gi, '')
     .replace(/<Analysis\b[^>]*>[\s\S]*?<\/Analysis>/gi, '')
     .replace(/<CONTEXT_conception\b[^>]*>[\s\S]*?<\/CONTEXT_conception>/gi, '')
+    .trim();
+}
+
+function stripVisibleFormattingMarkup(content: string): string {
+  return content
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<br\b[^>]*\/?>/gi, '\n')
+    .replace(/<\/(?:p|div)>/gi, '\n\n')
+    .replace(/<\/?(?:p|div|span|font|strong|em|b|i|u|s)\b[^>]*>/gi, '')
     .trim();
 }
 
@@ -1362,7 +1373,7 @@ function extractStreamingMaintext(content: string): string {
     extractPartialTagBody(cleaned, 'content') ||
     extractPartialTagBody(cleaned, 'NARRATIVE');
   if (!body) return '';
-  const text = stripHiddenOutputTags(body)
+  const text = stripVisibleFormattingMarkup(stripHiddenOutputTags(body))
     .replace(/<[^>\n]*$/g, '')
     .replace(/```[\w-]*\s*/g, '')
     .replace(/```/g, '')
