@@ -218,6 +218,9 @@ async function recordCraftAction(mode: CraftMode) {
   if (!basketSummary.value) return;
   craftMode.value = mode;
   const summaryBeforeAction = basketSummary.value;
+  const actionText = `玩家用这些材料${craftModeLabels[mode]}：${summaryBeforeAction}。`;
+  const inputBeforeAction = game.playerInput;
+  game.appendPlayerInput(actionText, 'COOK_DISH');
   const result = await game.executePseudoZeroAction({
     type: 'COOK_DISH',
     mode,
@@ -228,8 +231,13 @@ async function recordCraftAction(mode: CraftMode) {
     aiHint: '请按对应生成引擎叙述制作过程, 并输出 <craft_result> 隐藏数据块供前端入库。',
     logText: `${craftModeLabels[mode]} · ${summaryBeforeAction}`,
     preserveLocalState: true,
+    inputText: actionText,
   });
-  if (result.ok) clearSlots();
+  if (!result.ok) {
+    game.playerInput = inputBeforeAction;
+    return;
+  }
+  clearSlots();
 }
 
 async function serveItems() {
@@ -325,17 +333,30 @@ function itemTone(item: InventoryItem) {
           <span class="pm-tag dim">{{ seasonings.length }} 项</span>
         </header>
         <div v-if="seasonings.length" class="rack-scroll">
-          <button
+          <article
             v-for="item in seasonings"
             :key="item.id"
-            class="kitchen-item seasoning"
+            class="ingredient-card seasoning-card"
             draggable="true"
             @click="addToPot(item)"
             @dragstart="onDragStart($event, item)"
           >
-            <strong>{{ item.name }}</strong>
-            <span>×{{ item.qty }}{{ stockUnit(item) }}</span>
-          </button>
+            <div class="card-top">
+              <strong>{{ item.name }}</strong>
+              <span class="pm-num">×{{ item.qty }}{{ stockUnit(item) }}</span>
+            </div>
+            <div v-if="item.tags.length" class="tag-row">
+              <span v-for="tag in item.tags" :key="tag" class="pm-tag" :class="tagToneClass(tag)">{{ tag }}</span>
+            </div>
+            <div v-if="portionText(item)" class="portion-meter">
+              <div class="portion-head">
+                <span>当前{{ stockUnit(item) }}</span>
+                <strong>{{ portionText(item) }}</strong>
+              </div>
+              <span class="portion-bar"><i :style="{ width: `${portionPercent(item)}%` }"></i></span>
+            </div>
+            <small>{{ formatPortionCost(item) }}</small>
+          </article>
         </div>
         <div v-else class="pm-empty compact">库房里没有调料。</div>
       </section>
@@ -621,6 +642,11 @@ function itemTone(item: InventoryItem) {
   gap: 8px;
   overflow-x: auto;
   padding-bottom: 4px;
+}
+.seasoning-card {
+  min-width: 142px;
+  max-width: 210px;
+  flex: 0 0 min(210px, 42vw);
 }
 .kitchen-main {
   display: grid;

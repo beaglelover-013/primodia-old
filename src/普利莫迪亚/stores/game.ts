@@ -3682,6 +3682,7 @@ export const useGameStore = defineStore('primordia', () => {
     const existing = existingText.trim();
     const next = nextText.trim();
     if (!existing || !next) return null;
+    if (existing === next) return existing;
 
     if (type === 'FARM_EXPAND') {
       const pattern = /^(.*?开拓第)([0-9、]+)(号新田畦.*)$/s;
@@ -3804,6 +3805,12 @@ export const useGameStore = defineStore('primordia', () => {
     }
     if (patch.type === 'LOCAL_SETTLEMENT') {
       await restoreLocalSettlement(patch.snapshot, patch.reason);
+      if (
+        patch.actionType === 'INVENTORY_MOVE_TO_STORAGE' ||
+        patch.actionType === 'INVENTORY_MOVE_TO_SATCHEL'
+      ) {
+        await writeFrontendSettlementToCurrentMessage({ resources: true }, `${patch.actionType} 撤销`);
+      }
       return true;
     }
     if (patch.type === 'INVENTORY_TRANSFER') {
@@ -7688,8 +7695,17 @@ export const useGameStore = defineStore('primordia', () => {
   }
 
   function resolveInventoryMoveToStorage(action: Extract<GameAction, { type: 'INVENTORY_MOVE_TO_STORAGE' }>): ActionResult {
+    const sourceItem = satchel.value.find(item => item.id === action.itemId);
+    if (!sourceItem) return { ok: false, tone: 'red', message: `个人行囊里找不到这件物品。` };
+    const moveQty = Math.max(1, Math.min(sourceItem.qty, Math.floor(Number(action.qty) || sourceItem.qty)));
+    const portionsPerUnit = portionsPerUnitForItem(sourceItem);
+    const movedPortions =
+      moveQty >= sourceItem.qty
+        ? availablePortionsForItem(sourceItem)
+        : moveQty * portionsPerUnit;
+    const transferDetail = `${sourceItem.name}：${moveQty}${inventoryStockUnitForItem(sourceItem)}，每件${portionsPerUnit}${inventoryPortionUnitForItem(sourceItem)}，共${movedPortions}${inventoryPortionUnitForItem(sourceItem)}，每件价格${formatCopper(sourceItem.priceCopper ?? 0)}`;
     const moved = moveInventoryItemBetweenCollections(satchel.value, inventory.value, action.itemId, action.qty);
-    if (!moved.ok) return { ok: false, tone: 'red', message: `个人行囊里找不到这件物品。` };
+    if (!moved.ok) return { ok: false, tone: 'red', message: moved.message };
     markLocalStateDirty();
     void writeChatSave();
     pushLog('结算', `整理入库 · ${moved.item.name} ×${moved.qty}`);
@@ -7699,9 +7715,9 @@ export const useGameStore = defineStore('primordia', () => {
       message: `已将「${moved.item.name}」整理入库。`,
       shouldAskAI: true,
       summary: `${moved.item.name}×${moved.qty}`,
-      narrativeFact: `把行囊里的「${moved.item.name}」×${moved.qty}整理入库。`,
-      settledFact: `当前位置为「${currentSceneLabel()}」。玩家把个人行囊里的「${moved.item.name}」×${moved.qty}带回并整理进库房。前端已完成结算：个人行囊减少，库房增加。`,
-      aiHint: '请承接上一楼层描写动作过程；不要重新计算库存数量、随身钱袋或钱匣。',
+      narrativeFact: `把行囊里的物品整理入库。入库明细：${transferDetail}。`,
+      settledFact: `当前位置为「${currentSceneLabel()}」。玩家把个人行囊里的物品带回并整理进库房。入库明细：${transferDetail}。前端已完成结算并生成权威变量快照：个人行囊减少，库房增加。不得遗漏库房写入，不得改变件数、每件份数、总份数或价格。`,
+      aiHint: '请承接上一楼层描写整理过程；行囊与库房已经由前端完成变量结算，不要重新计算或覆盖库存、随身钱袋或钱匣。',
     };
   }
 
@@ -7858,10 +7874,11 @@ export const useGameStore = defineStore('primordia', () => {
       case 'INVENTORY_MOVE_TO_STORAGE':
       case 'INVENTORY_MOVE_TO_SATCHEL':
       case 'USE_ITEM':
-      case 'COOK_DISH':
       case 'SERVE_DISH':
       case 'BREW_TAP':
         return { resources: true, farmBrew: true };
+      case 'COOK_DISH':
+        return { resources: true, protagonistCooking: true, farmBrew: true };
       case 'INVENTORY_MOVE_CATEGORY':
         return { resources: true };
       case 'FARM_PLANT':
@@ -8166,8 +8183,11 @@ export const useGameStore = defineStore('primordia', () => {
 
   async function executePseudoZeroAction(action: GameAction, narrative?: PseudoZeroNarrativeOptions): Promise<ActionResult> {
     const rollbackSnapshot = narrative?.autoSend || narrative?.preserveLocalState || narrative?.queueDraft ? snapshotLocalSettlement() : null;
+    const isQueuedInventoryTransfer =
+      Boolean(narrative?.queueDraft) &&
+      (action.type === 'INVENTORY_MOVE_TO_STORAGE' || action.type === 'INVENTORY_MOVE_TO_SATCHEL');
     const queuedTransferItem =
-      narrative?.queueDraft && (action.type === 'INVENTORY_MOVE_TO_STORAGE' || action.type === 'INVENTORY_MOVE_TO_SATCHEL')
+      isQueuedInventoryTransfer
         ? clonePlain(
             (action.type === 'INVENTORY_MOVE_TO_STORAGE' ? satchel.value : inventory.value)
               .find(item => item.id === action.itemId),
@@ -8184,8 +8204,29 @@ export const useGameStore = defineStore('primordia', () => {
       return result;
     }
     await writeChatSave();
+    const shouldPersistQueuedResourceSettlement =
+      Boolean(narrative && !narrative.autoSend && result.frontendMvuScope?.resources) &&
+      isQueuedInventoryTransfer;
+    if (shouldPersistQueuedResourceSettlement) {
+      const wroteSettlement = await writeFrontendSettlementToCurrentMessage(
+        result.frontendMvuScope,
+        `${action.type} 即时结算`,
+      );
+      if (!wroteSettlement) {
+        if (rollbackSnapshot) {
+          await restoreLocalSettlement(rollbackSnapshot, '整理行动未能写入变量，已撤销本次移动。');
+        }
+        return {
+          ...result,
+          ok: false,
+          tone: 'red',
+          message: '整理行动未能写入当前楼层变量，本次移动已撤销。',
+        };
+      }
+    }
     // This settlement is still pending narration. The request path attaches
-    // it to the new user/assistant floors; writing here would mutate history.
+    // it to the new user/assistant floors. Queued resource actions are written
+    // above as well so their frontend settlement survives reloads before send.
     if (!narrative) {
       await writeFrontendSettlementToCurrentMessage(result.frontendMvuScope, `${action.type} 结算`);
       return result;

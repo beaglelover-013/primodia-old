@@ -584,7 +584,7 @@ function extractEmbeddedStoryTextFields(content: string): string[] {
     if (typeof value !== 'string') return;
     const text = value.trim();
     if (!text) return;
-    if (/<(?:maintext|NARRATIVE|shop|craft_result|guest_update|regular_guest_update|rumor_record|promise_update|tavern_state_update|business_agreement_update|character_behavior_update|UpdateVariable|JSONPatch)\b/i.test(text)) {
+    if (/<(?:maintext|content|NARRATIVE|shop|craft_result|guest_update|regular_guest_update|rumor_record|promise_update|tavern_state_update|business_agreement_update|character_behavior_update|UpdateVariable|JSONPatch)\b/i.test(text)) {
       found.push(text);
     }
   };
@@ -736,7 +736,9 @@ function normalizeAssistantMessage(raw: string): {
   const sum = extractLastTag(cleaned, 'sum');
   const updateVariable = extractLastTag(cleaned, 'UpdateVariable');
   const jsonPatch = extractEmbeddedJsonPatch(cleaned);
-  let maintext = stripHiddenOutputTags(extractLastTag(cleaned, 'maintext') || extractLastTag(cleaned, 'NARRATIVE'));
+  let maintext = stripHiddenOutputTags(
+    extractLastTag(cleaned, 'maintext') || extractLastTag(cleaned, 'content') || extractLastTag(cleaned, 'NARRATIVE'),
+  );
   if (maintext && !hasRenderableStreamingText(maintext)) {
     maintext = '';
   }
@@ -760,7 +762,7 @@ function normalizeAssistantMessage(raw: string): {
   if (!maintext && (updateVariable || jsonPatch)) {
     maintext = '变量记录已更新。';
   }
-  if (!maintext) throw new Error('生成内容缺少 <maintext> 正文。');
+  if (!maintext) throw new Error('生成内容缺少 <maintext> 或 <content> 正文。');
 
   let message = `<maintext>${maintext}</maintext>`;
   if (option) message += `\n\n<option>\n${option}\n</option>`;
@@ -1355,7 +1357,10 @@ function hasRenderableStreamingText(text: string): boolean {
 
 function extractStreamingMaintext(content: string): string {
   const cleaned = stripThinkingBlocks(content);
-  const body = extractPartialTagBody(cleaned, 'maintext') || extractPartialTagBody(cleaned, 'NARRATIVE');
+  const body =
+    extractPartialTagBody(cleaned, 'maintext') ||
+    extractPartialTagBody(cleaned, 'content') ||
+    extractPartialTagBody(cleaned, 'NARRATIVE');
   if (!body) return '';
   const text = stripHiddenOutputTags(body)
     .replace(/<[^>\n]*$/g, '')

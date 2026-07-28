@@ -72,7 +72,8 @@ async function organizeAllToStorage() {
   try {
     for (const itemId of targets) {
       const item = game.satchel.find(entry => entry.id === itemId);
-      if (item?.qty) await organizeToStorage(item);
+      if (!item?.qty) continue;
+      await organizeToStorage(item);
     }
   } finally {
     organizingAll.value = false;

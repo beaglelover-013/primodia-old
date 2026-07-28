@@ -516,7 +516,7 @@ function openEditMaintext() {
   }
   const maintext = parseMaintext(fullMessage);
   if (!maintext) {
-    game.pushLog('系统', '无法编辑：没有找到 <maintext> 正文。');
+    game.pushLog('系统', '无法编辑：没有找到 <maintext> 或 <content> 正文。');
     closeContextMenu();
     return;
   }
@@ -544,8 +544,9 @@ async function saveEditingMessage() {
       editing.mode === 'all'
         ? editing.currentText.trim()
         : editing.fullMessage.replace(
-            /<maintext\b[^>]*>[\s\S]*?<\/maintext>/i,
-            `<maintext>${editing.currentText.trim()}</maintext>`,
+            /<(maintext|content|NARRATIVE)\b([^>]*)>[\s\S]*?<\/\1>/i,
+            (_matched, tagName: string, attributes: string) =>
+              `<${tagName}${attributes}>${editing.currentText.trim()}</${tagName}>`,
           );
     await setChatMessages([{ message_id: editing.messageId, message: updatedMessage }], { refresh: 'affected' });
     if (editing.mode === 'all') {

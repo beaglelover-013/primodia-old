@@ -186,6 +186,7 @@ const HIDDEN_STORY_TAGS = [
   'Analysis',
   'CONTEXT_conception',
 ];
+const CONTENT_STORY_TAG = 'content';
 const LEGACY_NARRATIVE_TAG = 'NARRATIVE';
 const MAX_SHOP_PRODUCTS = 16;
 const FRONTEND_PLACEHOLDER_PATTERN =
@@ -219,7 +220,9 @@ function isUsableStoryText(content: string): boolean {
 }
 
 function hasExplicitStoryMarkup(content: string): boolean {
-  return /<maintext\b[^>]*>[\s\S]*?<\/maintext>|<NARRATIVE\b[^>]*>[\s\S]*?<\/NARRATIVE>/i.test(content);
+  return /<maintext\b[^>]*>[\s\S]*?<\/maintext>|<content\b[^>]*>[\s\S]*?<\/content>|<NARRATIVE\b[^>]*>[\s\S]*?<\/NARRATIVE>/i.test(
+    content,
+  );
 }
 
 function uniqueMessagesById(messages: any[]): any[] {
@@ -329,7 +332,7 @@ function extractEmbeddedStoryTextFields(content: string): string[] {
     if (typeof value !== 'string') return;
     const text = value.trim();
     if (!text) return;
-    if (/<(?:maintext|NARRATIVE|shop|craft_result|guest_update|regular_guest_update|rumor_record|promise_update|tavern_state_update|business_agreement_update|character_behavior_update|UpdateVariable|JSONPatch)\b/i.test(text)) {
+    if (/<(?:maintext|content|NARRATIVE|shop|craft_result|guest_update|regular_guest_update|rumor_record|promise_update|tavern_state_update|business_agreement_update|character_behavior_update|UpdateVariable|JSONPatch)\b/i.test(text)) {
       found.push(text);
     }
   };
@@ -480,8 +483,9 @@ export function parseMaintext(messageContent: string): string {
   if (isFrontendLoaderMessage(messageContent)) return '';
   const cleaned = stripThinkingBlocks(messageContent);
   const maintext = extractLastTag(cleaned, 'maintext');
+  const content = extractLastTag(cleaned, CONTENT_STORY_TAG);
   const narrative = extractLastTag(cleaned, LEGACY_NARRATIVE_TAG);
-  const body = maintext || narrative || cleaned;
+  const body = maintext || content || narrative || cleaned;
   return stripSeparatorOnlyParagraphs(stripFrontendPlaceholders(stripHiddenStoryTags(body))
     .replace(/<NARRATIVE\b[^>]*>/gi, '')
     .replace(/<\/NARRATIVE>/gi, '')
