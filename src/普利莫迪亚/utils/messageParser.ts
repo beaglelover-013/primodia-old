@@ -902,8 +902,11 @@ function parseCraftResultJson(craftText: string): ParsedCraftResult | undefined 
   } catch {
     return undefined;
   }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
-  const record = parsed as Record<string, unknown>;
+  const parsedRecord = Array.isArray(parsed)
+    ? parsed.find(item => item && typeof item === 'object' && !Array.isArray(item))
+    : parsed;
+  if (!parsedRecord || typeof parsedRecord !== 'object' || Array.isArray(parsedRecord)) return undefined;
+  const record = parsedRecord as Record<string, unknown>;
   const name = readJsonFirstString(record, ['名称', '成品名', '菜名', '酱名', '饮品名', 'name', 'outputName']);
   if (!name) return undefined;
 
@@ -929,7 +932,8 @@ function parseCraftResultJson(craftText: string): ParsedCraftResult | undefined 
       record.priceCopper ??
       record.price_copper ??
       record.unitPriceCopper ??
-      record.unit_price_copper,
+      record.unit_price_copper ??
+      record.price,
     0,
   );
   const serveableText = readJsonFirstString(record, ['是否可上菜', '可上菜', '可直接上桌', 'serveable']);
@@ -961,7 +965,10 @@ function parseCraftResultJson(craftText: string): ParsedCraftResult | undefined 
     startDay: readJsonFirstString(record, ['开始日', '酿造开始日', 'startDay']) || undefined,
     matureDay: readJsonFirstString(record, ['预计收获日', '收获日', '成熟日', 'matureDay']) || undefined,
     quantity,
-    quality: readJsonFirstString(record, ['搭配判定', '搭配等级', '品质', 'quality']) || readJsonFirstString(tagRecord, ['搭配判定', '搭配等级', '品质', 'quality']) || undefined,
+    quality:
+      readJsonFirstString(record, ['搭配判定', '搭配等级', '品质', 'quality', 'match_level', 'matchLevel']) ||
+      readJsonFirstString(tagRecord, ['搭配判定', '搭配等级', '品质', 'quality', 'match_level', 'matchLevel']) ||
+      undefined,
     tags: [...new Set(tags)],
     aromaTags: readJsonStringList(record, ['气味', '气味标签', '气息', '气息标签', 'aromaTags']),
     priceCopper,

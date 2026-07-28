@@ -134,7 +134,7 @@ function logTitle(log: EngineLog) {
           @click="retryLatestCapture"
         >
           <PmIcon name="refresh" :size="12" />
-          <span>{{ captureRetrying ? '扫描中' : '重新捕捉' }}</span>
+          <span>{{ captureRetrying ? '扫描中' : '捕捉格式' }}</span>
         </button>
         <small v-if="captureNotice" class="capture-notice">{{ captureNotice }}</small>
         <button class="mobile-panel-toggle" :class="{ attention: hasAttentionLog }" type="button" @click="mobileDetailsOpen = !mobileDetailsOpen">
@@ -166,15 +166,6 @@ function logTitle(log: EngineLog) {
           ></textarea>
         </label>
         <div class="dock-actions">
-          <button
-            class="pm-btn big mobile-capture-action"
-            :disabled="captureRetrying || game.isGenerating"
-            title="重新读取本回合全部助手消息，并重试变量与格式捕捉"
-            @click="retryLatestCapture"
-          >
-            <PmIcon name="refresh" :size="14" />
-            <span>{{ captureRetrying ? '扫描中' : '捕捉格式' }}</span>
-          </button>
           <button id="dock-send" class="pm-btn dark big" :disabled="game.isGenerating || (!game.actionDraft.trim() && !game.playerInput.trim())" @click="send">
             <PmIcon name="send" :size="14" />
             <span>{{ game.isGenerating ? '生成中' : '发出决定' }}</span>
@@ -480,10 +471,6 @@ function logTitle(log: EngineLog) {
 .dock-tips strong {
   color: var(--pm-gold-bright);
 }
-.mobile-capture-action {
-  display: none;
-}
-
 @media (max-width: 720px) {
   .dock {
     grid-template-columns: 1fr;
@@ -515,12 +502,15 @@ function logTitle(log: EngineLog) {
     letter-spacing: 0.08em;
     font-size: calc(10.5px * var(--pm-text-scale));
   }
-  .capture-retry span,
   .capture-notice {
     display: none;
   }
   .capture-retry {
-    display: none;
+    display: inline-flex;
+    min-height: 24px;
+    padding: 2px 7px;
+    font-size: calc(10px * var(--pm-text-scale));
+    letter-spacing: 0.02em;
   }
   .mobile-panel-toggle {
     display: inline-flex;
@@ -564,9 +554,6 @@ function logTitle(log: EngineLog) {
   .dock-actions {
     min-width: 92px;
     gap: 6px;
-  }
-  .mobile-capture-action {
-    display: inline-flex;
   }
   .dock-actions .pm-btn.big {
     min-height: 42px;
