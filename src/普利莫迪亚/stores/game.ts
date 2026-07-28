@@ -6756,14 +6756,14 @@ export const useGameStore = defineStore('primordia', () => {
         String(stored.batch ?? '') === String('batch' in item ? item.batch ?? '' : ''),
     );
     const qty = Math.max(0, Math.floor(Number(item.qty) || 0));
-    if (qty <= 0) return;
+    if (qty <= 0) return undefined;
     if (existed) {
       existed.qty += qty;
       if (!existed.desc && item.desc) existed.desc = item.desc;
       if (!existed.priceCopper && item.priceCopper) existed.priceCopper = item.priceCopper;
-      return;
+      return existed;
     }
-    collection.push({
+    const nextItem: InventoryItem = {
       id: 'id' in item && item.id ? item.id : `i-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       name: item.name,
       category,
@@ -6779,7 +6779,9 @@ export const useGameStore = defineStore('primordia', () => {
       priceCopper: item.priceCopper,
       ...('quality' in item && item.quality ? { quality: item.quality } : {}),
       ...('recipeSource' in item && item.recipeSource ? { recipeSource: clonePlain(item.recipeSource) } : {}),
-    });
+    };
+    collection.push(nextItem);
+    return nextItem;
   }
 
   function itemSourceLabel(source: InventorySource) {
@@ -7014,7 +7016,7 @@ export const useGameStore = defineStore('primordia', () => {
   function addSatchelFromAction(item: BuyActionItem) {
     const category = normalizeInventoryCategory(item.category);
     const tags = normalizeActionTags(item, category);
-    addItemToCollection(satchel.value, { ...item, category, tags });
+    return addItemToCollection(satchel.value, { ...item, category, tags });
   }
 
   function moveInventoryItemBetweenCollections(from: InventoryItem[], to: InventoryItem[], itemId: string, qty?: number) {
@@ -8175,6 +8177,7 @@ export const useGameStore = defineStore('primordia', () => {
       });
       return result;
     }
+    const purchaseSettlementSnapshot = action.type === 'BUY_ITEMS' ? snapshotLocalSettlement() : null;
 
     await writeChatSave();
     // This settlement is still pending narration. The request path attaches
@@ -8296,6 +8299,17 @@ export const useGameStore = defineStore('primordia', () => {
         tone: 'red',
         message: rollbackReason,
       };
+    }
+    if (purchaseSettlementSnapshot && narrativeOk && narrative.autoSend) {
+      walletCopper.value = normalizeCopperValue(purchaseSettlementSnapshot.walletCopper);
+      satchel.value = clonePlain(purchaseSettlementSnapshot.satchel);
+      generatedShop.value = purchaseSettlementSnapshot.generatedShop
+        ? clonePlain(purchaseSettlementSnapshot.generatedShop)
+        : null;
+      generatedShopProducts.value = clonePlain(purchaseSettlementSnapshot.generatedShopProducts);
+      markLocalStateDirty();
+      await writeFrontendSettlementToCurrentMessage(result.frontendMvuScope, '采购结算校正');
+      await writeChatSave();
     }
     return result;
   }
@@ -11604,16 +11618,21 @@ export const useGameStore = defineStore('primordia', () => {
       for (const [name, raw] of Object.entries(record)) {
         const parsed = inventoryItemFromRecord(name, raw, category, `${category}-${name}-${nextInventory.length}`);
         if (!parsed) continue;
-        const existingRecipeSource = previous.find(
+        const existingItem = previous.find(
           existing =>
             existing.name === name &&
             existing.category === category &&
-            sameTagSet(existing.tags, parsed.tags) &&
-            existing.recipeSource,
-        )?.recipeSource;
+            sameTagSet(existing.tags, parsed.tags),
+        );
         nextInventory.push({
           ...parsed,
-          ...(existingRecipeSource ? { recipeSource: clonePlain(existingRecipeSource) } : {}),
+          ...(existingItem?.id ? { id: existingItem.id } : {}),
+          ...(parsed.unit || !existingItem?.unit ? {} : { unit: existingItem.unit }),
+          ...(parsed.portionUnit || !existingItem?.portionUnit ? {} : { portionUnit: existingItem.portionUnit }),
+          ...(parsed.batch || !existingItem?.batch ? {} : { batch: existingItem.batch }),
+          ...(parsed.baseName || !existingItem?.baseName ? {} : { baseName: existingItem.baseName }),
+          ...(parsed.desc || !existingItem?.desc ? {} : { desc: existingItem.desc }),
+          ...(existingItem?.recipeSource ? { recipeSource: clonePlain(existingItem.recipeSource) } : {}),
         });
       }
     }
@@ -11947,6 +11966,11 @@ export const useGameStore = defineStore('primordia', () => {
     if (item.category === '成品' || item.category === '酒水') {
       record.搭配判定 = item.quality ?? '无冲突';
     }
+    if (item.unit) record.单位 = item.unit;
+    if (item.portionUnit) record.份数单位 = item.portionUnit;
+    if (item.batch) record.批次 = item.batch;
+    if (item.baseName) record.基础名称 = item.baseName;
+    if (item.desc) record.备注 = item.desc;
     return record;
   }
 
