@@ -240,10 +240,9 @@ onMounted(refreshWorldbooks);
     <button
       class="confirm-button"
       type="button"
-      :disabled="!!loading || !worldbookName"
-      @click="chooseOpening(selectedOpening.id)"
-    >
-      <i class="mobile-button-skin" :style="{ backgroundImage: `url(${titleBoardImage})` }"></i>
+    :disabled="!!loading || !worldbookName"
+    @click="chooseOpening(selectedOpening.id)"
+  >
       <span>{{ loading || '使用这个开场' }}</span>
       <PmIcon name="scroll" :size="18" />
     </button>
@@ -642,9 +641,16 @@ button:focus-visible {
   height: 77px;
   padding: 0;
   color: #f5e2b5;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+  border: 2px solid #4a260d;
+  border-radius: 3px;
+  background:
+    linear-gradient(90deg, rgba(232, 188, 91, 0.1), transparent 18%, transparent 82%, rgba(232, 188, 91, 0.1)),
+    linear-gradient(180deg, #28543a 0%, #173d2a 48%, #102c1e 100%);
+  box-shadow:
+    inset 0 0 0 1px #c18a35,
+    inset 0 0 0 4px #0c271a,
+    inset 0 1px 0 5px rgba(247, 214, 137, 0.22),
+    0 5px 10px rgba(43, 20, 7, 0.36);
   cursor: pointer;
   isolation: isolate;
   font-size: 18px;
@@ -661,8 +667,9 @@ button:focus-visible {
 .confirm-button::after {
   content: '';
   position: absolute;
-  inset: 10px 15px;
-  border: 1px solid transparent;
+  inset: 7px 9px;
+  border: 1px solid rgba(224, 175, 78, 0.42);
+  border-radius: 1px;
   pointer-events: none;
 }
 
@@ -672,7 +679,7 @@ button:focus-visible {
 }
 
 .confirm-button:hover:not(:disabled)::after {
-  border-color: rgba(255, 224, 143, 0.45);
+  border-color: rgba(255, 224, 143, 0.72);
   box-shadow: inset 0 0 18px rgba(246, 203, 102, 0.12);
 }
 
@@ -685,8 +692,9 @@ button:focus-visible {
   filter: grayscale(0.8) brightness(0.76);
 }
 
-.mobile-button-skin {
-  display: none;
+.confirm-button :deep(svg) {
+  color: #e7bd64;
+  filter: drop-shadow(0 1px 1px rgba(8, 24, 16, 0.85));
 }
 
 @media (max-width: 760px) {
@@ -932,16 +940,11 @@ button:focus-visible {
     width: 218px;
     height: 56px;
     font-size: 14px;
-  }
-
-  .mobile-button-skin {
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    display: block;
-    background-position: -194px -300px;
-    background-repeat: no-repeat;
-    background-size: 705px 470px;
+    box-shadow:
+      inset 0 0 0 1px #c18a35,
+      inset 0 0 0 3px #0c271a,
+      inset 0 1px 0 4px rgba(247, 214, 137, 0.22),
+      0 4px 8px rgba(43, 20, 7, 0.34);
   }
 }
 

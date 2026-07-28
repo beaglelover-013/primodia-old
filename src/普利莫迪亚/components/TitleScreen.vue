@@ -47,6 +47,9 @@ const emit = defineEmits<{
 .title-screen {
   display: grid;
   place-items: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   padding: 28px;
   color: #f4dfaa;
   background: var(--pm-app-bg);
@@ -54,20 +57,22 @@ const emit = defineEmits<{
 
 .illustrated-title {
   position: relative;
-  width: 1080px;
-  height: 720px;
+  width: min(100%, 1080px);
+  height: auto;
+  aspect-ratio: 3 / 2;
   overflow: hidden;
   border: 2px solid #41220e;
   border-radius: 6px;
   background-color: #6c3513;
   background-position: center;
   background-repeat: no-repeat;
-  background-size: 1080px 720px;
+  background-size: 100% 100%;
   box-shadow:
     0 0 0 3px #a16826,
     0 0 0 6px #3c210e,
     0 22px 70px rgba(20, 9, 3, 0.58);
   isolation: isolate;
+  container-type: inline-size;
   font-family: "Noto Serif SC", "Songti SC", SimSun, serif;
 }
 
@@ -78,9 +83,9 @@ const emit = defineEmits<{
 
 .title-copy {
   position: absolute;
-  left: 204px;
-  top: 164px;
-  width: 672px;
+  left: 18.8889%;
+  top: 22.7778%;
+  width: 62.2222%;
   text-align: center;
   text-shadow:
     0 2px #0d2016,
@@ -90,7 +95,7 @@ const emit = defineEmits<{
 .maker {
   color: #c8aa6b;
   font-family: Georgia, serif;
-  font-size: 11px;
+  font-size: clamp(8px, 1.0185cqw, 11px);
   font-weight: 700;
   letter-spacing: 0.22em;
 }
@@ -99,13 +104,13 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  margin: 10px 0 8px;
+  gap: clamp(6px, 1.1111cqw, 12px);
+  margin: clamp(5px, 0.9259cqw, 10px) 0 clamp(4px, 0.7407cqw, 8px);
   color: #f1c86f;
 }
 
 .ornament span {
-  width: 72px;
+  width: 10.7143%;
   height: 1px;
   background: linear-gradient(90deg, transparent, #d4a853);
 }
@@ -115,41 +120,41 @@ const emit = defineEmits<{
 }
 
 .ornament b {
-  font-size: 11px;
+  font-size: clamp(8px, 1.0185cqw, 11px);
 }
 
 .title-copy h1 {
   margin: 0;
   color: #f8e9c1;
-  font-size: 52px;
+  font-size: clamp(28px, 4.8148cqw, 52px);
   font-weight: 900;
   line-height: 1;
 }
 
 .title-copy h2 {
-  margin: 9px 0 0;
+  margin: clamp(4px, 0.8333cqw, 9px) 0 0;
   color: #f1c86f;
-  font-size: 28px;
+  font-size: clamp(16px, 2.5926cqw, 28px);
   line-height: 1;
   letter-spacing: 0.2em;
   text-indent: 0.2em;
 }
 
 .title-copy p {
-  margin: 23px 0 0;
+  margin: clamp(9px, 2.1296cqw, 23px) 0 0;
   color: #d0c29d;
-  font-size: 13px;
+  font-size: clamp(9px, 1.2037cqw, 13px);
   letter-spacing: 0.08em;
 }
 
 .start-button {
   position: absolute;
-  left: 304px;
-  top: 477px;
+  left: 28.1481%;
+  top: 66.25%;
   display: grid;
   place-content: center;
-  width: 470px;
-  height: 104px;
+  width: 43.5185%;
+  height: 14.4444%;
   padding: 0;
   color: #f5e2b5;
   border: 0;
@@ -167,7 +172,7 @@ const emit = defineEmits<{
 .start-button::after {
   content: '';
   position: absolute;
-  inset: 10px 15px;
+  inset: 9.6154% 3.1915%;
   border: 1px solid transparent;
   pointer-events: none;
   transition:
@@ -201,18 +206,18 @@ const emit = defineEmits<{
 }
 
 .start-button span {
-  font-size: 25px;
+  font-size: clamp(16px, 2.3148cqw, 25px);
   font-weight: 800;
   letter-spacing: 0.12em;
   text-indent: 0.12em;
 }
 
 .start-button small {
-  width: 390px;
-  margin-top: 5px;
+  width: 82.9787%;
+  margin-top: clamp(2px, 0.463cqw, 5px);
   overflow: hidden;
   color: #bfae81;
-  font-size: 10px;
+  font-size: clamp(8px, 0.9259cqw, 10px);
   letter-spacing: 0.08em;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -220,14 +225,14 @@ const emit = defineEmits<{
 
 footer {
   position: absolute;
-  left: 32px;
-  right: 32px;
-  bottom: 18px;
+  left: 2.963%;
+  right: 2.963%;
+  bottom: 2.5%;
   display: flex;
   justify-content: space-between;
   color: rgba(255, 225, 169, 0.62);
   font-family: Georgia, serif;
-  font-size: 9px;
+  font-size: clamp(7px, 0.8333cqw, 9px);
   letter-spacing: 0.12em;
   text-shadow: 0 1px 2px #261104;
 }
@@ -238,21 +243,22 @@ footer {
   }
 
   .illustrated-title {
-    width: 276px;
-    height: 640px;
+    width: 100%;
+    height: 100%;
+    aspect-ratio: auto;
     border-radius: 0;
-    background-position: 50% center;
-    background-size: 960px 640px;
+    background-position: center;
+    background-size: auto 100%;
   }
 
   .title-copy {
-    left: 18px;
-    top: 172px;
-    width: 240px;
+    left: 11%;
+    top: 24%;
+    width: 78%;
   }
 
   .maker {
-    font-size: 8px;
+    font-size: 9px;
     letter-spacing: 0.18em;
   }
 
@@ -262,43 +268,51 @@ footer {
   }
 
   .ornament span {
-    width: 42px;
+    width: 22%;
   }
 
   .title-copy h1 {
-    font-size: 34px;
+    font-size: 40px;
   }
 
   .title-copy h2 {
     margin-top: 8px;
-    font-size: 18px;
+    font-size: 21px;
   }
 
   .title-copy p {
-    margin-top: 22px;
-    font-size: 10px;
+    margin-top: 24px;
+    font-size: 11px;
+    line-height: 1.6;
   }
 
   .start-button {
-    left: 31px;
-    top: 465px;
-    width: 214px;
-    height: 66px;
+    left: 14%;
+    top: auto;
+    bottom: 19%;
+    width: 72%;
+    height: 72px;
+  }
+
+  .start-button::after {
+    inset: 10px 15px;
   }
 
   .start-button span {
-    font-size: 18px;
+    font-size: 20px;
   }
 
   .start-button small {
-    width: 176px;
-    font-size: 8px;
+    width: 82%;
+    margin-top: 5px;
+    font-size: 9px;
   }
 
   footer {
-    left: 18px;
-    right: 18px;
-    font-size: 7px;
+    left: 22px;
+    right: 22px;
+    bottom: 20px;
+    font-size: 8px;
   }
 }
 

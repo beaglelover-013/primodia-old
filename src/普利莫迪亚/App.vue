@@ -648,8 +648,14 @@ const tabTitle = computed(
 }
 
 @media (max-width: 760px) {
+  .pm-entry-shell {
+    width: 100%;
+    height: 100%;
+    padding: 0;
+  }
+
   .pm-entry-checking {
-    width: 390px;
+    width: 100%;
   }
 
   .pm-style-guide-shell {
