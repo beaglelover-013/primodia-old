@@ -1,4 +1,0 @@
-<PRIMORDIA_TURN_CONTEXT status="waiting">
-【说明】
-这是普利莫迪亚本回合完整发送包的自动覆盖条目。发送新回合前，前端会把本回合发生/待执行内容写入这里。
-</PRIMORDIA_TURN_CONTEXT>
