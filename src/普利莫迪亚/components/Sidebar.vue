@@ -142,6 +142,9 @@ function navItemSub(item: NavItem) {
 }
 
 function openMobilePromises() {
+  // ChroniclePage may not be mounted yet because App.vue uses an out-in page transition.
+  // Keep a one-shot request so the newly mounted page can consume it instead of losing the event.
+  (window as Window & { __primordiaPromiseShortcutPending?: boolean }).__primordiaPromiseShortcutPending = true;
   game.currentTab = 'chronicle';
   window.dispatchEvent(new CustomEvent('primordia-open-promises'));
 }

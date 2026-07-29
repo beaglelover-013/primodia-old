@@ -58,8 +58,10 @@ let longPressTimer: number | null = null;
 let messageEventStops: EventOnReturn[] = [];
 let storyStreamingStop: (() => void) | undefined;
 let storyUpdatedStop: (() => void) | undefined;
+const promiseShortcutWindow = window as Window & { __primordiaPromiseShortcutPending?: boolean };
 
 function openPromiseRailFromShortcut() {
+  promiseShortcutWindow.__primordiaPromiseShortcutPending = false;
   isPromiseRailOpen.value = true;
   nextTick(() => {
     document.querySelector<HTMLElement>('.promise-rail')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -649,6 +651,9 @@ onMounted(() => {
     showOptions.value = false;
   });
   window.addEventListener('primordia-open-promises', openPromiseRailFromShortcut);
+  if (promiseShortcutWindow.__primordiaPromiseShortcutPending) {
+    openPromiseRailFromShortcut();
+  }
   if (typeof eventOn !== 'function' || typeof tavern_events === 'undefined') return;
 
   messageEventStops = [
