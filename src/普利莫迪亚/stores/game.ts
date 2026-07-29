@@ -247,18 +247,84 @@ function dishUnitsForName(name: string) {
   const compact = trimmed.replace(/[「」"'“”‘’（）()【】\[\]\s]/g, '');
   const endsWith = (patterns: string[]) => patterns.some(pattern => compact.endsWith(pattern));
 
-  if (endsWith(['汤', '浓汤', '清汤', '羹', '粥', '热粥', '冷粥', '面汤', '米汤'])) return { unit: '碗', portionUnit: '碗' };
-  if (endsWith(['面', '拉面', '汤面', '拌面', '炒面', '冷面', '米线', '粉', '河粉', '米粉', '馄饨', '馄饨汤'])) return { unit: '碗', portionUnit: '碗' };
+  if (endsWith(['汤', '浓汤', '清汤', '羹', '粥', '热粥', '冷粥', '面汤', '米汤', '炖汤', '奶油汤'])) return { unit: '碗', portionUnit: '碗' };
+  if (endsWith(['面', '拉面', '汤面', '拌面', '炒面', '冷面', '米线', '粉', '河粉', '米粉', '馄饨', '馄饨汤', '饺子', '水饺'])) return { unit: '碗', portionUnit: '碗' };
   if (endsWith(['炒饭', '烩饭', '盖饭', '焗饭', '拌饭', '炖饭', '饭'])) return { unit: '盘', portionUnit: '盘' };
-  if (endsWith(['炖菜', '炒菜', '烩菜', '焖菜', '煎菜', '拌菜', '凉菜', '沙拉', '拼盘', '冷盘'])) return { unit: '盘', portionUnit: '盘' };
-  if (endsWith(['炖肉', '烤肉', '炒肉', '煎肉', '焖肉', '肉排', '排餐', '烤鱼', '煎鱼', '炖鱼', '鱼排'])) return { unit: '盘', portionUnit: '盘' };
-  if (endsWith(['炖锅', '火锅', '砂锅', '杂锅', '一锅炖'])) return { unit: '锅', portionUnit: '碗' };
-  if (endsWith(['饼', '薄饼', '煎饼', '馅饼', '烤饼', '披萨', '派'])) return { unit: '张', portionUnit: '块' };
-  if (endsWith(['蛋糕', '糕', '糕点', '布丁', '冻', '塔', '甜派'])) return { unit: '块', portionUnit: '块' };
-  if (endsWith(['面包', '餐包', '小面包', '馒头', '包子', '饭团', '团子', '丸子', '肉丸', '鱼丸'])) return { unit: '个', portionUnit: '个' };
+  if (endsWith(['炖菜', '炒菜', '烩菜', '焖菜', '煎菜', '拌菜', '凉菜', '沙拉', '拼盘', '冷盘', '排餐', '烤鱼', '煎鱼', '炖鱼', '鱼排'])) return { unit: '盘', portionUnit: '盘' };
+  if (endsWith(['炖肉', '烤肉', '炒肉', '煎肉', '焖肉', '肉排', '肉片', '肉块'])) return { unit: '盘', portionUnit: '块' };
+  if (endsWith(['炖锅', '火锅', '砂锅', '杂锅', '一锅炖', '煲'])) return { unit: '锅', portionUnit: '碗' };
+  if (endsWith(['披萨', '薄饼', '煎饼', '馅饼', '烤饼', '饼'])) return { unit: '张', portionUnit: '块' };
+  if (endsWith(['蛋糕', '糕', '糕点', '布丁', '果冻', '奶冻', '塔', '甜派', '派'])) return { unit: '块', portionUnit: '块' };
+  if (endsWith(['面包', '餐包', '小面包', '馒头', '包子', '饭团', '团子', '丸子', '肉丸', '鱼丸', '汉堡', '三明治'])) return { unit: '个', portionUnit: '个' };
   if (endsWith(['串', '肉串', '鱼串', '蔬菜串'])) return { unit: '串', portionUnit: '串' };
   if (endsWith(['卷', '肉卷', '菜卷', '蛋卷'])) return { unit: '卷', portionUnit: '卷' };
   if (endsWith(['酱', '蘸酱', '果酱', '调味酱'])) return { unit: '罐', portionUnit: '勺' };
+  if (endsWith(['茶', '咖啡', '牛奶', '果汁', '饮料', '酒', '麦酒', '啤酒', '葡萄酒', '苹果酒', '蜂蜜酒'])) return { unit: '壶', portionUnit: '杯' };
+  if (endsWith(['烤鸡', '烧鸡', '熏鸡', '烤鸭', '烧鸭', '烤鹅', '烧鹅', '乳鸽'])) return { unit: '只', portionUnit: '块' };
+  if (
+    endsWith([
+      '鸡丁',
+      '肉丁',
+      '肉丝',
+      '肉片',
+      '鱼片',
+      '豆腐',
+      '煎蛋',
+      '炒蛋',
+      '烧',
+      '炒',
+      '煎',
+      '炸',
+      '烤',
+      '蒸',
+      '焖',
+      '炖',
+      '烩',
+      '卤',
+      '拌',
+    ])
+  ) return { unit: '盘', portionUnit: '盘' };
+  return undefined;
+}
+
+const CURRENCY_OR_BAD_INVENTORY_UNIT = /^(?:铜|铜币|银|银币|金|金币|铂金|铂金币|秘银|秘银币|钱|价格|售价|单价|元|角|分)$/;
+
+function usableInventoryUnit(value: string) {
+  const unit = value.trim().replace(/^每(?:件|份|个|组|批)\s*/u, '');
+  if (!unit || CURRENCY_OR_BAD_INVENTORY_UNIT.test(unit)) return '';
+  return unit;
+}
+
+function ingredientUnitsForText(name: string, text: string): { unit: string; portionUnit: string } | undefined {
+  // 优先匹配语义明确的食材。这里的结果比 AI/存档里的泛化“单位”更可靠，
+  // 例如“剥皮洋葱”即使被误写为“根”，仍应显示为“个”。
+  if (/鸡蛋|鸭蛋|鹅蛋|鹌鹑蛋|鸟蛋|蛋类|鲜蛋/.test(text) || /蛋$/.test(name)) return { unit: '枚', portionUnit: '枚' };
+  if (/整鸡|整鸭|整鹅|整只鸡|整只鸭|整只鹅|活鸡|活鸭|活鹅|禽鸟|兔子|乳鸽/.test(text)) return { unit: '只', portionUnit: '只' };
+  if (/鱼肉|鱼排|鱼片|鱼块/.test(text)) return { unit: '块', portionUnit: '块' };
+  if (/鱼$/.test(name) || /鲈鱼|鳟鱼|鲑鱼|鳕鱼|鲤鱼|鲫鱼|河鱼|海鱼|鳗鱼|鲱鱼|沙丁鱼/.test(text)) return { unit: '条', portionUnit: '条' };
+  if (/螃蟹|河蟹|海蟹|龙虾|对虾|明虾|牡蛎|生蚝|贝类/.test(text)) return { unit: '只', portionUnit: '只' };
+  if (/虾仁|蟹肉|贝肉|肉类|猪肉|牛肉|羊肉|鸡肉|鸭肉|鹅肉|鹿肉|兔肉|咸肉|熏肉|培根|香肠|火腿|排骨/.test(text)) return { unit: '块', portionUnit: '块' };
+
+  if (/大蒜|蒜头|蒜瓣/.test(text) || /蒜$/.test(name)) return { unit: '头', portionUnit: '瓣' };
+  if (/蘑菇|香菇|口蘑|松茸|菌菇|菌子|木耳/.test(text)) return { unit: '朵', portionUnit: '朵' };
+  if (/洋葱|土豆|马铃薯|番茄|西红柿|番薯|红薯|芋头|甜菜|南瓜|茄子|青椒|彩椒|辣椒|柠檬|橙子|橘子|苹果|梨|桃|石榴|椰子/.test(text)) return { unit: '个', portionUnit: '个' };
+  if (/葡萄|提子/.test(text)) return { unit: '串', portionUnit: '颗' };
+  if (/草莓|蓝莓|树莓|覆盆子|樱桃|枣|浆果/.test(text)) return { unit: '篮', portionUnit: '颗' };
+  if (/卷心菜|圆白菜|大白菜|白菜|甘蓝|生菜|花椰菜|西兰花|莴苣|包菜/.test(text)) return { unit: '颗', portionUnit: '叶' };
+  if (/胡萝卜|白萝卜|萝卜|大葱|小葱|芦笋|芹菜|黄瓜|玉米|甘蔗|韭菜/.test(text) || /葱$/.test(name)) return { unit: '根', portionUnit: '根' };
+  if (/生姜|姜块/.test(text) || /姜$/.test(name)) return { unit: '块', portionUnit: '片' };
+  if (/香草|薄荷|罗勒|欧芹|迷迭香|百里香|香菜|紫苏/.test(text)) return { unit: '束', portionUnit: '撮' };
+
+  if (/奶酪|黄油|豆腐/.test(text)) return { unit: '块', portionUnit: '块' };
+  if (/蜂蜜|果酱|糖浆|酱料|肉酱|蘸酱/.test(text)) return { unit: '罐', portionUnit: '勺' };
+  if (/牛奶|羊奶|奶油|醋|酱油|果汁|高汤|肉汤/.test(text)) return { unit: '瓶', portionUnit: '勺' };
+  if (/面粉|大米|糙米|麦|小麦|燕麦|谷物|豆子|豌豆|扁豆|坚果|干豆/.test(text) || /米$/.test(name)) return { unit: '袋', portionUnit: '勺' };
+  if (/盐|糖|粗糖|胡椒|香料|调料|茶叶|咖啡豆|可可粉/.test(text)) return { unit: '罐', portionUnit: '撮' };
+
+  if (/麻绳|柴火|木柴|干草|稻草/.test(text)) return { unit: '捆', portionUnit: '根' };
+  if (/蜡烛/.test(text)) return { unit: '根', portionUnit: '根' };
+  if (/灯油|食用油/.test(text) || /油$/.test(name)) return { unit: '壶', portionUnit: '次' };
+  if (/水$/.test(name)) return { unit: '桶', portionUnit: '升' };
   return undefined;
 }
 
@@ -268,30 +334,18 @@ export function inventoryUnitsFor(
   const name = String(item.name || '').trim();
   const text = `${name} ${(item.tags ?? []).join(' ')}`;
   const perServing = Math.max(1, Math.floor(Number(item.portionsPerUnit) || 1));
-  const explicitUnit = String(item.unit || '').trim();
-  const explicitSubunit = String(item.portionUnit || '').trim();
+  const explicitUnit = usableInventoryUnit(String(item.unit || ''));
+  const explicitSubunit = usableInventoryUnit(String(item.portionUnit || ''));
   const dishUnits = item.category === '成品' ? dishUnitsForName(name) : undefined;
+  const ingredientUnits = item.category === '成品' || item.category === '酒水' ? undefined : ingredientUnitsForText(name, text);
+  const inferredUnits = dishUnits ?? ingredientUnits;
 
-  let naturalUnit = explicitUnit;
+  // 明确命中的自然量词优先于外部数据，修正“洋葱=根/捆”一类语义错误。
+  let naturalUnit = inferredUnits?.unit ?? explicitUnit;
   if (!naturalUnit || naturalUnit === '份') {
-    if (dishUnits) naturalUnit = dishUnits.unit;
-    else if (/鸡蛋|鸭蛋|鹅蛋|鸟蛋|蛋$/.test(text)) naturalUnit = '枚';
-    else if (/胡萝卜|白萝卜|萝卜|葱|芦笋|芹菜|黄瓜|玉米|甘蔗/.test(text)) naturalUnit = '根';
-    else if (/卷心菜|白菜|甘蓝|生菜|花椰菜|西兰花|莴苣/.test(text)) naturalUnit = '颗';
-    else if (/土豆|洋葱|番茄|番薯|红薯|苹果|梨|橙|柠檬|南瓜|甜菜|蘑菇/.test(text)) naturalUnit = '个';
-    else if (/猪肉|牛肉|羊肉|鸡肉|鸭肉|鹅肉|鱼肉|咸肉|熏肉|培根|香肠|肉类/.test(text)) naturalUnit = '块';
-    else if (/鱼$|鲈鱼|鳟鱼|鲑鱼|鳕鱼|鲤鱼|河鱼|海鱼/.test(text)) naturalUnit = '条';
-    else if (/奶酪|黄油|豆腐|蜂蜜|果酱|酱料/.test(text)) naturalUnit = '罐';
-    else if (/牛奶|羊奶|奶$|醋|酱油|葡萄酒|果汁/.test(text)) naturalUnit = '瓶';
-    else if (/面粉|米|麦|小麦|燕麦|谷物|豆子|豌豆|扁豆|坚果/.test(text)) naturalUnit = '袋';
-    else if (/盐|糖|粗糖|胡椒|香料|调料|茶叶|咖啡/.test(text)) naturalUnit = '罐';
-    else if (/麻绳|柴火|木柴|干草|稻草/.test(text)) naturalUnit = '捆';
-    else if (/蜡烛/.test(text)) naturalUnit = '根';
-    else if (/灯油|油$/.test(text)) naturalUnit = '壶';
-    else if (/肥皂/.test(text)) naturalUnit = '块';
+    if (/肥皂/.test(text)) naturalUnit = '块';
     else if (/布匹|布料|桌布|床单|被套|枕套|毛巾|围裙|抹布/.test(text)) naturalUnit = '匹';
     else if (/木桶|空桶|桶$/.test(text)) naturalUnit = '个';
-    else if (/水$/.test(text)) naturalUnit = '桶';
     else if (item.category === '酒水') naturalUnit = /瓶/.test(name) ? '瓶' : '桶';
     else if (item.category === '成品') naturalUnit = '份';
     else naturalUnit = '件';
@@ -299,22 +353,10 @@ export function inventoryUnitsFor(
 
   if (perServing <= 1) return { unit: naturalUnit, portionUnit: naturalUnit };
 
-  let portionUnit = explicitSubunit && explicitSubunit !== '份' ? explicitSubunit : '';
+  // 分份单位同样以食材/菜品语义为先，不让错误的显式“根/捆”覆盖洋葱等已知物品。
+  let portionUnit = inferredUnits?.portionUnit ?? (explicitSubunit && explicitSubunit !== '份' ? explicitSubunit : '');
   if (!portionUnit) {
-    if (dishUnits) portionUnit = dishUnits.portionUnit;
-    else if (item.category === '酒水') portionUnit = '杯';
-    else if (/猪肉|牛肉|羊肉|鸡肉|鸭肉|鹅肉|鱼肉|咸肉|熏肉|培根|香肠|肉类|奶酪|黄油|豆腐/.test(text)) portionUnit = '块';
-    else if (/鱼$|鲈鱼|鳟鱼|鲑鱼|鳕鱼|鲤鱼|河鱼|海鱼/.test(text)) portionUnit = '条';
-    else if (/鸡蛋|鸭蛋|鹅蛋|鸟蛋|蛋$/.test(text)) portionUnit = '枚';
-    else if (/胡萝卜|白萝卜|萝卜|葱|芦笋|芹菜|黄瓜|玉米|甘蔗/.test(text)) portionUnit = '根';
-    else if (/卷心菜|白菜|甘蓝|生菜|花椰菜|西兰花|莴苣/.test(text)) portionUnit = '叶';
-    else if (/土豆|洋葱|番茄|番薯|红薯|苹果|梨|橙|柠檬|南瓜|甜菜|蘑菇/.test(text)) portionUnit = '个';
-    else if (/盐|胡椒|香料|茶叶|咖啡/.test(text)) portionUnit = '撮';
-    else if (/糖|粗糖|面粉|米|麦|小麦|燕麦|谷物|豆子|豌豆|扁豆|坚果/.test(text)) portionUnit = '勺';
-    else if (/蜂蜜|果酱|酱料|醋|酱油|牛奶|羊奶|奶$|果汁/.test(text)) portionUnit = '勺';
-    else if (/柴火|木柴|干草|稻草/.test(text)) portionUnit = '根';
-    else if (/灯油/.test(text)) portionUnit = '次';
-    else if (/水$/.test(text)) portionUnit = '升';
+    if (item.category === '酒水') portionUnit = '杯';
     else portionUnit = naturalUnit === '份' ? '个' : naturalUnit;
   }
   return { unit: '份', portionUnit };

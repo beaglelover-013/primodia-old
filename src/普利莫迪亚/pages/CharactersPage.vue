@@ -1098,7 +1098,7 @@ async function createWorldbookEntryForSelected() {
     <!-- 赠送模态 -->
     <Teleport to="body">
       <div v-if="giftOpen" class="pm-modal-mask" @click.self="giftOpen = false">
-        <div class="pm-modal">
+        <div class="pm-modal gift-modal">
           <header class="pm-modal-head">
             <h3><PmIcon name="gift" :size="16" /> 赠送 · {{ giftTarget?.name }}</h3>
             <button class="pm-link" @click="giftOpen = false"><PmIcon name="x" :size="16" /></button>
@@ -1726,6 +1726,28 @@ async function createWorldbookEntryForSelected() {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 8px;
 }
+.gift-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+}
+.gift-modal > .pm-modal-head,
+.gift-modal > .pm-modal-foot {
+  min-height: 0;
+}
+.gift-modal > .pm-modal-body {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+.gift-modal .gift-grid {
+  touch-action: pan-y;
+}
 .gift-card {
   display: grid;
   gap: 4px;
@@ -2134,6 +2156,17 @@ async function createWorldbookEntryForSelected() {
 }
 
 @media (max-width: 600px) {
+  .gift-modal {
+    width: 100%;
+    max-height: calc(100vh - 20px);
+    max-height: calc(100dvh - 20px);
+  }
+  .gift-modal > .pm-modal-body {
+    padding: 12px;
+  }
+  .gift-modal .gift-grid {
+    grid-template-columns: 1fr;
+  }
   #page-characters {
     display: block;
     overflow: visible;
